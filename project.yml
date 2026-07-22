@@ -1,0 +1,71 @@
+name: DeedSlacker
+options:
+  bundleIdPrefix: com.deedslacker
+  deploymentTarget:
+    iOS: "17.0"
+    macOS: "14.0"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    SWIFT_VERSION: "5.10"
+    ENABLE_PREVIEWS: YES
+    CODE_SIGN_STYLE: Automatic
+    ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS: YES
+
+targets:
+  DeedSlacker:
+    type: application
+    platform: [iOS, macOS]
+    deploymentTarget:
+      iOS: "17.0"
+      macOS: "14.0"
+    sources:
+      - path: Sources
+    resources:
+      - path: Resources
+    info:
+      properties:
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        NSHumanReadableCopyright: "DeedSlacker"
+    entitlements:
+      path: Sources/App/DeedSlacker.entitlements
+      properties:
+        com.apple.security.application-groups:
+          - group.com.deedslacker.shared
+        com.apple.developer.icloud-container-identifiers:
+          - iCloud.com.deedslacker.app
+        com.apple.developer.icloud-services:
+          - CloudKit
+        com.apple.developer.ubiquity-kvstore-identifier: "$(TeamIdentifierPrefix)com.deedslacker.app"
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.deedslacker.app
+        PRODUCT_NAME: DeedSlacker
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SUPPORTS_MACCATALYST: NO
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_NSHumanReadableCopyright: ""
+    scheme:
+      testTargets:
+        - DeedSlackerTests
+      gatherCoverageData: true
+
+  DeedSlackerTests:
+    type: bundle.unit-test
+    platform: [iOS, macOS]
+    deploymentTarget:
+      iOS: "17.0"
+      macOS: "14.0"
+    sources:
+      - path: Tests
+    dependencies:
+      - target: DeedSlacker
