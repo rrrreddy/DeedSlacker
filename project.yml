@@ -1,0 +1,89 @@
+name: DeedSlacker
+options:
+  bundleIdPrefix: com.deedslacker
+  createIntermediateGroups: true
+
+settings:
+  base:
+    SWIFT_VERSION: "5.10"
+    ENABLE_PREVIEWS: YES
+    CODE_SIGN_STYLE: Automatic
+    ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS: YES
+
+targetTemplates:
+  DeedSlackerApp:
+    sources:
+      - path: Sources
+    resources:
+      - path: Resources
+    # iCloud/CloudKit entitlements are omitted for now — a free "Personal
+    # Team" cannot provision the iCloud capability. Once enrolled in the
+    # paid Apple Developer Program, restore this block (see
+    # Sources/App/DeedSlacker.entitlements, which still has the full
+    # config) and flip CloudSyncContainer.isCloudSyncEnabled to true:
+    #
+    # entitlements:
+    #   path: Sources/App/DeedSlacker.entitlements
+    #   properties:
+    #     com.apple.security.application-groups:
+    #       - group.com.deedslacker.shared
+    #     com.apple.developer.icloud-container-identifiers:
+    #       - iCloud.com.deedslacker.app
+    #     com.apple.developer.icloud-services:
+    #       - CloudKit
+    #     com.apple.developer.ubiquity-kvstore-identifier: "$(TeamIdentifierPrefix)com.deedslacker.app"
+    dependencies:
+      - sdk: StoreKit.framework
+      - sdk: CloudKit.framework
+      - sdk: Contacts.framework
+    settings:
+      base:
+        PRODUCT_NAME: DeedSlacker
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_NSHumanReadableCopyright: ""
+        INFOPLIST_KEY_NSContactsUsageDescription: "Pin a contact's photo and name to a city card. DeedSlacker never shares or uploads their location."
+
+targets:
+  DeedSlacker-iOS:
+    type: application
+    platform: iOS
+    deploymentTarget: "17.0"
+    templates:
+      - DeedSlackerApp
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.deedslacker.app
+        TARGETED_DEVICE_FAMILY: "1,2"
+        INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
+        INFOPLIST_KEY_UISupportedInterfaceOrientations~ipad: >-
+          UIInterfaceOrientationPortrait
+          UIInterfaceOrientationLandscapeLeft
+          UIInterfaceOrientationLandscapeRight
+    scheme:
+      testTargets:
+        - DeedSlackerTests-iOS
+      gatherCoverageData: true
+
+  DeedSlacker-macOS:
+    type: application
+    platform: macOS
+    deploymentTarget: "14.0"
+    templates:
+      - DeedSlackerApp
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.deedslacker.app
+        COMBINE_HIDPI_IMAGES: YES
+
+  DeedSlackerTests-iOS:
+    type: bundle.unit-test
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: Tests
+    dependencies:
+      - target: DeedSlacker-iOS
