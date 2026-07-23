@@ -24,11 +24,6 @@ struct WorldClockView: View {
         NavigationStack {
             List {
                 Section {
-                    TradingTimeGraph(offsetHours: $overlapOffsetHours)
-                        .listRowInsets(EdgeInsets())
-                        .listRowSeparator(.hidden)
-                        .listRowBackground(Color.clear)
-
                     CompareChipsBar(zones: comparedZones) { zone in
                         toggleCompare(zone)
                     }
@@ -76,6 +71,15 @@ struct WorldClockView: View {
                     .listRowSeparator(.hidden)
                     .listRowBackground(Color.clear)
                     .padding(.top, 40)
+                }
+
+                // The scrubber lives at the bottom, thumb-reachable, still
+                // with no card/box behind it.
+                Section {
+                    TradingTimeGraph(offsetHours: $overlapOffsetHours)
+                        .listRowInsets(EdgeInsets())
+                        .listRowSeparator(.hidden)
+                        .listRowBackground(Color.clear)
                 }
             }
             .listStyle(.plain)
@@ -129,7 +133,7 @@ private struct TradingTimeGraph: View {
     @GestureState private var isDragging = false
     @State private var lastHapticHour: Int = 0
 
-    private let range: ClosedRange<Double> = -12...12
+    private let range: ClosedRange<Double> = -24...24
     private let graphHeight: CGFloat = 130
 
     private var isFuture: Bool { offsetHours >= 0 }
@@ -156,18 +160,16 @@ private struct TradingTimeGraph: View {
                 let progress = (offsetHours - range.lowerBound) / (range.upperBound - range.lowerBound)
                 let playheadX = progress * width
                 let zeroX = ((0 - range.lowerBound) / (range.upperBound - range.lowerBound)) * width
-                let amplitude = min(abs(offsetHours) / 12, 1) * (midY - 18)
+                let amplitude = min(abs(offsetHours) / 24, 1) * (midY - 18)
                 let playheadY = midY - (isFuture ? amplitude : -amplitude)
 
                 ZStack {
-                    RoundedRectangle(cornerRadius: 18, style: .continuous)
-                        .fill(Color.black.opacity(0.25))
-
-                    // Hour gridlines for a proper "chart" feel.
+                    // Faint hour gridlines only — no card/box behind them,
+                    // the graph sits directly on the page background.
                     HStack(spacing: 0) {
-                        ForEach(Array(stride(from: range.lowerBound, through: range.upperBound, by: 3)), id: \.self) { hour in
+                        ForEach(Array(stride(from: range.lowerBound, through: range.upperBound, by: 6)), id: \.self) { hour in
                             Rectangle()
-                                .fill(.white.opacity(hour == 0 ? 0.28 : 0.08))
+                                .fill(.white.opacity(hour == 0 ? 0.16 : 0.05))
                                 .frame(width: hour == 0 ? 1.5 : 1)
                             if hour < range.upperBound { Spacer(minLength: 0) }
                         }
@@ -231,19 +233,18 @@ private struct TradingTimeGraph: View {
             .frame(height: graphHeight)
 
             HStack {
-                Label("-12h", systemImage: "arrow.down.right")
+                Label("-24h", systemImage: "arrow.down.right")
                     .foregroundStyle(TradingPalette.down)
                 Spacer()
                 Text("now")
                     .foregroundStyle(.secondary)
                 Spacer()
-                Label("+12h", systemImage: "arrow.up.right")
+                Label("+24h", systemImage: "arrow.up.right")
                     .foregroundStyle(TradingPalette.up)
             }
             .font(Typography.caption)
         }
-        .padding()
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: Theme.cardCornerRadius, style: .continuous))
+        .padding(.horizontal, 4)
     }
 
     private var bubbleText: String {
@@ -312,6 +313,8 @@ private struct TimeZoneRow: View {
     let isComparing: Bool
     let onTap: () -> Void
 
+    @State private var weather: WeatherSnapshot?
+
     private var formattedTime: String {
         let formatter = DateFormatter()
         formatter.timeZone = zone.timeZone
@@ -354,10 +357,21 @@ private struct TimeZoneRow: View {
                                     .font(.caption)
                             }
                         }
-                        Text(dayOffsetLabel.uppercased())
-                            .font(Typography.eyebrow)
-                            .tracking(0.6)
-                            .foregroundStyle(.secondary)
+                        HStack(spacing: 6) {
+                            Text(dayOffsetLabel.uppercased())
+                                .font(Typography.eyebrow)
+                                .tracking(0.6)
+                                .foregroundStyle(.secondary)
+                            if let weather {
+                                Text("·").foregroundStyle(.secondary)
+                                Image(systemName: weather.symbolName)
+                                    .font(.system(size: 11))
+                                    .symbolRenderingMode(.multicolor)
+                                Text("\(Int(weather.temperatureCelsius.rounded()))°")
+                                    .font(Typography.eyebrow)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
                     }
                     Spacer()
                     Text(formattedTime)
@@ -371,6 +385,10 @@ private struct TimeZoneRow: View {
         }
         .contentShape(Rectangle())
         .onTapGesture(perform: onTap)
+        .task(id: zone.persistentModelID) {
+            guard zone.hasKnownCoordinates else { return }
+            weather = await WeatherService.fetch(latitude: zone.latitude, longitude: zone.longitude)
+        }
     }
 }
 
@@ -433,7 +451,14 @@ private struct AddTimeZoneSheet: View {
 
     private func add(identifier: String) {
         let label = identifier.components(separatedBy: "/").last?.replacingOccurrences(of: "_", with: " ") ?? identifier
-        let zone = TrackedTimeZone(identifier: identifier, label: label, sortOrder: sortOrder)
+        let coordinates = CityCoordinates.coordinates(forIdentifier: identifier)
+        let zone = TrackedTimeZone(
+            identifier: identifier,
+            label: label,
+            sortOrder: sortOrder,
+            latitude: coordinates?.latitude,
+            longitude: coordinates?.longitude
+        )
         modelContext.insert(zone)
         dismiss()
     }

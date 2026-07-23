@@ -7,12 +7,22 @@ final class TrackedTimeZone {
     var label: String = ""
     var sortOrder: Int = 0
     var createdAt: Date = Date.now
+    /// 0 when unknown — coordinates are only known for cities in
+    /// CityCoordinates' curated lookup table, used to fetch weather.
+    var latitude: Double = 0
+    var longitude: Double = 0
+    var hasKnownCoordinates: Bool = false
 
-    init(identifier: String, label: String, sortOrder: Int = 0) {
+    init(identifier: String, label: String, sortOrder: Int = 0, latitude: Double? = nil, longitude: Double? = nil) {
         self.identifier = identifier
         self.label = label
         self.sortOrder = sortOrder
         self.createdAt = .now
+        if let latitude, let longitude {
+            self.latitude = latitude
+            self.longitude = longitude
+            self.hasKnownCoordinates = true
+        }
     }
 
     var timeZone: TimeZone {
