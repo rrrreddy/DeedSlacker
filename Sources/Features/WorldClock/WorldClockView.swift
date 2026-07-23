@@ -10,6 +10,8 @@ struct WorldClockView: View {
 
     @State private var overlapOffsetMinutes: Double = 0
     @State private var isAddingZone = false
+    @State private var contactMenuZone: TrackedTimeZone?
+    @State private var pickingContactsZone: TrackedTimeZone?
 
     private var referenceDate: Date {
         Calendar.current.date(byAdding: .minute, value: Int(overlapOffsetMinutes), to: .now) ?? .now
@@ -17,53 +19,100 @@ struct WorldClockView: View {
 
     var body: some View {
         NavigationStack {
-            List {
-                Section {
-                    ForEach(trackedZones) { zone in
-                        TimeZoneRow(zone: zone, referenceDate: referenceDate)
+            ZStack(alignment: .bottomTrailing) {
+                List {
+    Section {
+                        ForEach(trackedZones) { zone in
+                            TimeZoneRow(zone: zone, referenceDate: referenceDate) {
+                                withAnimation(FluidAnimation.bouncy) { contactMenuZone = zone }
+                            }
                             .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
                             .listRowSeparator(.hidden)
                             .listRowBackground(Color.clear)
+                            .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                                Button(role: .destructive) {
+                                    withAnimation(FluidAnimation.snappy) {
+                                        modelContext.delete(zone)
+                                    }
+                                } label: {
+                                    Label("Remove", systemImage: "trash")
+                                }
+                            }
+                        }
+                        .onMove(perform: moveZones)
                     }
-                    .onMove(perform: moveZones)
-                } header: {
-                    if !trackedZones.isEmpty {
-                        Text("Hold and drag to reorder")
-                            .font(Typography.eyebrow)
-                            .foregroundStyle(.secondary)
+
+                    if trackedZones.isEmpty {
+                        VStack(spacing: 16) {
+                            EmptyModuleState(
+                                symbolName: "globe",
+                                title: "No time zones yet",
+                                subtitle: "Add a city to compare hours across your world."
+                            )
+                            Button {
+                                isAddingZone = true
+                            } label: {
+                                Label("Add Your First City", systemImage: "plus")
+                                    .font(Typography.title(14))
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .tint(ModuleAccent.worldClock.color)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .listRowInsets(EdgeInsets())
+                        .listRowSeparator(.hidden)
+                        .listRowBackground(Color.clear)
+                        .padding(.top, 40)
                     }
+                }
+                .listStyle(.plain)
+                .scrollContentBackground(.hidden)
+
+                if !trackedZones.isEmpty {
+                    FloatingAddButton {
+                        isAddingZone = true
+                    }
+                    .padding(.trailing, 20)
+                    .padding(.bottom, 96)
                 }
 
-                if trackedZones.isEmpty {
-                    EmptyModuleState(
-                        symbolName: "globe",
-                        title: "No time zones yet",
-                        subtitle: "Add a city to compare hours across your world."
+                if let zone = contactMenuZone {
+                    FloatingContactMenu(
+                        zoneLabel: zone.label,
+                        hasContacts: !zone.pinnedContactIdentifiers.isEmpty,
+                        onManage: {
+                            pickingContactsZone = zone
+                            withAnimation(FluidAnimation.bouncy) { contactMenuZone = nil }
+                        },
+                        onDismiss: {
+                            withAnimation(FluidAnimation.bouncy) { contactMenuZone = nil }
+                        }
                     )
-                    .listRowInsets(EdgeInsets())
-                    .listRowSeparator(.hidden)
-                    .listRowBackground(Color.clear)
-                    .padding(.top, 40)
+                    .transition(.opacity)
                 }
             }
-            .listStyle(.plain)
-            .scrollContentBackground(.hidden)
             .background(Theme.backgroundGradient.ignoresSafeArea())
             .safeAreaInset(edge: .bottom) {
                 BottomTimeScrubber(offsetMinutes: $overlapOffsetMinutes)
             }
-            .navigationTitle("World Clock")
             .toolbar {
-                ToolbarItem(placement: .primaryAction) {
-                    Button {
-                        isAddingZone = true
-                    } label: {
-                        Image(systemName: "plus.circle.fill")
+                ToolbarItem(placement: .principal) {
+                    VStack(spacing: 0) {
+                        Text("World Clock")
+                            .font(Typography.title(17))
+                        if !trackedZones.isEmpty {
+                            Text("\(trackedZones.count) \(trackedZones.count == 1 ? "city" : "cities")")
+                                .font(Typography.eyebrow)
+                                .foregroundStyle(.secondary)
+                        }
                     }
                 }
             }
             .sheet(isPresented: $isAddingZone) {
                 AddTimeZoneSheet(sortOrder: trackedZones.count)
+            }
+            .sheet(item: $pickingContactsZone) { zone in
+                ContactPickerSheet(zone: zone)
             }
         }
     }
@@ -77,6 +126,104 @@ struct WorldClockView: View {
     }
 }
 
+/// A glassy circular action button hovering above the scrubber — replaces
+/// the plain nav-bar plus icon with something that matches the floating,
+/// tactile language used everywhere else in the app.
+private struct FloatingAddButton: View {
+    let action: () -> Void
+    @State private var isPressed = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "plus")
+                .font(.system(size: 20, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: 54, height: 54)
+                .background(
+                    Circle().fill(
+                        LinearGradient(
+                            colors: [ModuleAccent.worldClock.color, ModuleAccent.worldClock.color.opacity(0.7)],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                )
+                .overlay(Circle().strokeBorder(.white.opacity(0.25), lineWidth: 1))
+                .shadow(color: ModuleAccent.worldClock.color.opacity(0.5), radius: 14, y: 6)
+        }
+        .buttonStyle(.plain)
+        .scaleEffect(isPressed ? 0.9 : 1)
+        .animation(FluidAnimation.snappy, value: isPressed)
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 0)
+                .onChanged { _ in isPressed = true }
+                .onEnded { _ in isPressed = false }
+        )
+    }
+}
+
+/// A custom floating glass menu that appears centered over the screen
+/// with a dimmed backdrop — replaces the plain system action sheet with
+/// something that matches the app's own floating/glass design language.
+private struct FloatingContactMenu: View {
+    let zoneLabel: String
+    let hasContacts: Bool
+    let onManage: () -> Void
+    let onDismiss: () -> Void
+
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.45)
+                .ignoresSafeArea()
+                .onTapGesture(perform: onDismiss)
+                .transition(.opacity)
+
+            VStack(spacing: 0) {
+                VStack(spacing: 4) {
+                    Image(systemName: "person.crop.circle.badge.plus")
+                        .font(.system(size: 26))
+                        .foregroundStyle(TradingPalette.up)
+                        .padding(.bottom, 4)
+                    Text(zoneLabel)
+                        .font(Typography.title(16))
+                    Text("Pin someone from your contacts to this city")
+                        .font(Typography.caption)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+                .padding(.vertical, 22)
+                .padding(.horizontal, 24)
+
+                Divider().overlay(.white.opacity(0.1))
+
+                Button(action: onManage) {
+                    Text(hasContacts ? "Manage Contacts" : "Add Contact")
+                        .font(Typography.title(15))
+                        .foregroundStyle(TradingPalette.up)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                }
+
+                Divider().overlay(.white.opacity(0.1))
+
+                Button(action: onDismiss) {
+                    Text("Cancel")
+                        .font(Typography.body)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                }
+            }
+            .frame(maxWidth: 300)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).strokeBorder(Theme.cardStroke, lineWidth: 1))
+            .shadow(color: .black.opacity(0.5), radius: 30, y: 12)
+            .transition(.scale(scale: 0.85).combined(with: .opacity))
+        }
+        .animation(FluidAnimation.bouncy, value: zoneLabel)
+    }
+}
+
 /// A slim time scrubber fixed to the bottom of the screen via
 /// `safeAreaInset` — always visible, no scrolling required. Dragging is
 /// relative (delta-based) rather than mapped to a fixed track range, so it
@@ -87,6 +234,7 @@ private struct BottomTimeScrubber: View {
     @Binding var offsetMinutes: Double
     @GestureState private var dragStartOffset: Double?
     @State private var lastHapticStep: Int = 0
+    @State private var isPulsing = false
 
     /// Minutes of scrub per point of horizontal drag — tuned so a full
     /// screen-width swipe covers roughly a day.
@@ -106,12 +254,26 @@ private struct BottomTimeScrubber: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(formattedDateTime)
-                    .font(Typography.title(13))
-                    .foregroundStyle(offsetMinutes == 0 ? .primary : (isFuture ? TradingPalette.up : TradingPalette.down))
-                    .contentTransition(.numericText())
-                WaveTrack(offsetMinutes: offsetMinutes)
+            HStack(spacing: 6) {
+                if offsetMinutes == 0 {
+                    Circle()
+                        .fill(TradingPalette.up)
+                        .frame(width: 6, height: 6)
+                        .shadow(color: TradingPalette.up.opacity(0.8), radius: isPulsing ? 5 : 2)
+                        .scaleEffect(isPulsing ? 1.4 : 1)
+                        .onAppear {
+                            withAnimation(.easeInOut(duration: 1.1).repeatForever(autoreverses: true)) {
+                                isPulsing = true
+                            }
+                        }
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(formattedDateTime)
+                        .font(Typography.title(13))
+                        .foregroundStyle(offsetMinutes == 0 ? .primary : (isFuture ? TradingPalette.up : TradingPalette.down))
+                        .contentTransition(.numericText())
+                    WaveTrack(offsetMinutes: offsetMinutes)
+                }
             }
 
             if offsetMinutes != 0 {
@@ -208,11 +370,10 @@ private struct BottomTimeScrubber: View {
 private struct TimeZoneRow: View {
     let zone: TrackedTimeZone
     let referenceDate: Date
+    let onTapCard: () -> Void
 
     @State private var weather: WeatherSnapshot?
     @State private var pinnedContacts: [PickerContact] = []
-    @State private var isShowingContactMenu = false
-    @State private var isPickingContacts = false
 
     private var formattedTime: String {
         let formatter = DateFormatter()
@@ -275,10 +436,17 @@ private struct TimeZoneRow: View {
                     }
                 }
                 Spacer()
-                Text(formattedTime)
-                    .font(Typography.numeric(28))
-                    .contentTransition(.numericText())
-                    .animation(FluidAnimation.snappy, value: formattedTime)
+                VStack(alignment: .trailing, spacing: 3) {
+                    Text(formattedTime)
+                        .font(Typography.numeric(28))
+                        .contentTransition(.numericText())
+                        .animation(FluidAnimation.snappy, value: formattedTime)
+                    if pinnedContacts.isEmpty {
+                        Label("Tap to pin", systemImage: "person.crop.circle.badge.plus")
+                            .font(.system(size: 9, weight: .medium, design: .rounded))
+                            .foregroundStyle(.white.opacity(0.3))
+                    }
+                }
             }
 
             SunMoonArcView(hour: fractionalHour, pinnedContacts: pinnedContacts)
@@ -293,22 +461,27 @@ private struct TimeZoneRow: View {
                 .fill(cardWash)
         )
         .overlay(
+            // A thin diagonal glass-shine sweep across the top corner —
+            // the small "premium glass" gimmick that makes a flat card
+            // read as an actual lit surface.
+            RoundedRectangle(cornerRadius: Theme.cardCornerRadius, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [.white.opacity(0.10), .clear, .clear],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .allowsHitTesting(false)
+        )
+        .overlay(
             RoundedRectangle(cornerRadius: Theme.cardCornerRadius, style: .continuous)
                 .strokeBorder(Color.white.opacity(0.1), lineWidth: 1)
         )
         .shadow(color: .black.opacity(0.35), radius: 16, y: 8)
         .animation(FluidAnimation.gentle, value: fractionalHour)
         .contentShape(Rectangle())
-        .onTapGesture { isShowingContactMenu = true }
-        .confirmationDialog(zone.label, isPresented: $isShowingContactMenu, titleVisibility: .visible) {
-            Button(pinnedContacts.isEmpty ? "Add Contact" : "Manage Contacts") {
-                isPickingContacts = true
-            }
-            Button("Cancel", role: .cancel) {}
-        }
-        .sheet(isPresented: $isPickingContacts) {
-            ContactPickerSheet(zone: zone)
-        }
+        .onTapGesture(perform: onTapCard)
         .task(id: zone.persistentModelID) {
             guard zone.hasKnownCoordinates else { return }
             weather = await WeatherService.fetch(latitude: zone.latitude, longitude: zone.longitude)
@@ -332,27 +505,75 @@ private struct AddTimeZoneSheet: View {
 
     @State private var searchText = ""
 
+    private var allIdentifiers: [String] { TimeZone.knownTimeZoneIdentifiers.sorted() }
+
     private var filteredIdentifiers: [String] {
-        let all = TimeZone.knownTimeZoneIdentifiers.sorted()
-        guard !searchText.isEmpty else { return all }
-        return all.filter { $0.localizedCaseInsensitiveContains(searchText) }
+        guard !searchText.isEmpty else { return [] }
+        return allIdentifiers.filter { $0.localizedCaseInsensitiveContains(searchText) }
+    }
+
+    /// Grouped by the identifier's leading path component ("America",
+    /// "Europe", "Asia"...) so browsing feels like picking a region
+    /// instead of scrolling one flat 400-row list.
+    private var groupedByRegion: [(region: String, identifiers: [String])] {
+        let groups = Dictionary(grouping: allIdentifiers) { $0.components(separatedBy: "/").first ?? "Other" }
+        return groups.keys.sorted().map { ($0, groups[$0]!.sorted()) }
+    }
+
+    private func utcOffsetLabel(for identifier: String) -> String {
+        guard let tz = TimeZone(identifier: identifier) else { return "" }
+        let hours = Double(tz.secondsFromGMT()) / 3600
+        return hours == 0 ? "UTC" : String(format: "UTC%+.0f", hours)
     }
 
     var body: some View {
         NavigationStack {
-            List(filteredIdentifiers, id: \.self) { identifier in
-                Button {
-                    add(identifier: identifier)
-                } label: {
-                    Text(identifier.replacingOccurrences(of: "_", with: " "))
+            Group {
+                if searchText.isEmpty {
+                    List(groupedByRegion, id: \.region) { group in
+                        Section(group.region.replacingOccurrences(of: "_", with: " ")) {
+                            ForEach(group.identifiers, id: \.self) { identifier in
+                                cityRow(identifier)
+                            }
+                        }
+                    }
+                } else {
+                    List(filteredIdentifiers, id: \.self) { identifier in
+                        cityRow(identifier)
+                    }
                 }
             }
-            .searchable(text: $searchText)
-            .navigationTitle("Add Time Zone")
+            .listStyle(.insetGrouped)
+            .searchable(text: $searchText, prompt: "Search cities")
+            .navigationTitle("Add a City")
+            #if os(iOS)
+            .navigationBarTitleDisplayMode(.inline)
+            #endif
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Cancel") { dismiss() }
                 }
+            }
+        }
+    }
+
+    private func cityRow(_ identifier: String) -> some View {
+        Button {
+            add(identifier: identifier)
+        } label: {
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(identifier.components(separatedBy: "/").last?.replacingOccurrences(of: "_", with: " ") ?? identifier)
+                        .font(Typography.title(15))
+                        .foregroundStyle(.primary)
+                    Text(identifier.replacingOccurrences(of: "_", with: " "))
+                        .font(Typography.caption)
+                        .foregroundStyle(.secondary)
+                }
+                Spacer()
+                Text(utcOffsetLabel(for: identifier))
+                    .font(Typography.caption)
+                    .foregroundStyle(.secondary)
             }
         }
     }

@@ -104,7 +104,7 @@ struct SunMoonArcView: View {
                 if !pinnedContacts.isEmpty {
                     HStack(spacing: -6) {
                         ForEach(pinnedContacts.prefix(3)) { contact in
-                            ContactThumbnailImage(data: contact.thumbnailData, size: 18)
+                            ContactThumbnailImage(data: contact.thumbnailData, initials: contact.initials, size: 18)
                                 .overlay(Circle().strokeBorder(.white.opacity(0.8), lineWidth: 1))
                                 .shadow(color: .black.opacity(0.4), radius: 2)
                         }
