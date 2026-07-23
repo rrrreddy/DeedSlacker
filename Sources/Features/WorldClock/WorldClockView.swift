@@ -10,6 +10,8 @@ struct WorldClockView: View {
 
     @State private var overlapOffsetMinutes: Double = 0
     @State private var isAddingZone = false
+    @State private var contactMenuZone: TrackedTimeZone?
+    @State private var pickingContactsZone: TrackedTimeZone?
 
     private var referenceDate: Date {
         Calendar.current.date(byAdding: .minute, value: Int(overlapOffsetMinutes), to: .now) ?? .now
@@ -19,20 +21,25 @@ struct WorldClockView: View {
         NavigationStack {
             ZStack(alignment: .bottomTrailing) {
                 List {
-                    Section {
+    Section {
                         ForEach(trackedZones) { zone in
-                            TimeZoneRow(zone: zone, referenceDate: referenceDate)
-                                .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
-                                .listRowSeparator(.hidden)
-                                .listRowBackground(Color.clear)
+                            TimeZoneRow(zone: zone, referenceDate: referenceDate) {
+                                withAnimation(FluidAnimation.bouncy) { contactMenuZone = zone }
+                            }
+                            .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+                            .listRowSeparator(.hidden)
+                            .listRowBackground(Color.clear)
+                            .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                                Button(role: .destructive) {
+                                    withAnimation(FluidAnimation.snappy) {
+                                        modelContext.delete(zone)
+                                    }
+                                } label: {
+                                    Label("Remove", systemImage: "trash")
+                                }
+                            }
                         }
                         .onMove(perform: moveZones)
-                    } header: {
-                        if !trackedZones.isEmpty {
-                            Text("Hold and drag to reorder")
-                                .font(Typography.eyebrow)
-                                .foregroundStyle(.secondary)
-                        }
                     }
 
                     if trackedZones.isEmpty {
@@ -68,6 +75,21 @@ struct WorldClockView: View {
                     .padding(.trailing, 20)
                     .padding(.bottom, 96)
                 }
+
+                if let zone = contactMenuZone {
+                    FloatingContactMenu(
+                        zoneLabel: zone.label,
+                        hasContacts: !zone.pinnedContactIdentifiers.isEmpty,
+                        onManage: {
+                            pickingContactsZone = zone
+                            withAnimation(FluidAnimation.bouncy) { contactMenuZone = nil }
+                        },
+                        onDismiss: {
+                            withAnimation(FluidAnimation.bouncy) { contactMenuZone = nil }
+                        }
+                    )
+                    .transition(.opacity)
+                }
             }
             .background(Theme.backgroundGradient.ignoresSafeArea())
             .safeAreaInset(edge: .bottom) {
@@ -88,6 +110,9 @@ struct WorldClockView: View {
             }
             .sheet(isPresented: $isAddingZone) {
                 AddTimeZoneSheet(sortOrder: trackedZones.count)
+            }
+            .sheet(item: $pickingContactsZone) { zone in
+                ContactPickerSheet(zone: zone)
             }
         }
     }
@@ -134,6 +159,68 @@ private struct FloatingAddButton: View {
                 .onChanged { _ in isPressed = true }
                 .onEnded { _ in isPressed = false }
         )
+    }
+}
+
+/// A custom floating glass menu that appears centered over the screen
+/// with a dimmed backdrop — replaces the plain system action sheet with
+/// something that matches the app's own floating/glass design language.
+private struct FloatingContactMenu: View {
+    let zoneLabel: String
+    let hasContacts: Bool
+    let onManage: () -> Void
+    let onDismiss: () -> Void
+
+    var body: some View {
+        ZStack {
+            Color.black.opacity(0.45)
+                .ignoresSafeArea()
+                .onTapGesture(perform: onDismiss)
+                .transition(.opacity)
+
+            VStack(spacing: 0) {
+                VStack(spacing: 4) {
+                    Image(systemName: "person.crop.circle.badge.plus")
+                        .font(.system(size: 26))
+                        .foregroundStyle(TradingPalette.up)
+                        .padding(.bottom, 4)
+                    Text(zoneLabel)
+                        .font(Typography.title(16))
+                    Text("Pin someone from your contacts to this city")
+                        .font(Typography.caption)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+                .padding(.vertical, 22)
+                .padding(.horizontal, 24)
+
+                Divider().overlay(.white.opacity(0.1))
+
+                Button(action: onManage) {
+                    Text(hasContacts ? "Manage Contacts" : "Add Contact")
+                        .font(Typography.title(15))
+                        .foregroundStyle(TradingPalette.up)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                }
+
+                Divider().overlay(.white.opacity(0.1))
+
+                Button(action: onDismiss) {
+                    Text("Cancel")
+                        .font(Typography.body)
+                        .foregroundStyle(.secondary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 14)
+                }
+            }
+            .frame(maxWidth: 300)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 24, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 24, style: .continuous).strokeBorder(Theme.cardStroke, lineWidth: 1))
+            .shadow(color: .black.opacity(0.5), radius: 30, y: 12)
+            .transition(.scale(scale: 0.85).combined(with: .opacity))
+        }
+        .animation(FluidAnimation.bouncy, value: zoneLabel)
     }
 }
 
@@ -283,11 +370,10 @@ private struct BottomTimeScrubber: View {
 private struct TimeZoneRow: View {
     let zone: TrackedTimeZone
     let referenceDate: Date
+    let onTapCard: () -> Void
 
     @State private var weather: WeatherSnapshot?
     @State private var pinnedContacts: [PickerContact] = []
-    @State private var isShowingContactMenu = false
-    @State private var isPickingContacts = false
 
     private var formattedTime: String {
         let formatter = DateFormatter()
@@ -375,22 +461,27 @@ private struct TimeZoneRow: View {
                 .fill(cardWash)
         )
         .overlay(
+            // A thin diagonal glass-shine sweep across the top corner —
+            // the small "premium glass" gimmick that makes a flat card
+            // read as an actual lit surface.
+            RoundedRectangle(cornerRadius: Theme.cardCornerRadius, style: .continuous)
+                .fill(
+                    LinearGradient(
+                        colors: [.white.opacity(0.10), .clear, .clear],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .allowsHitTesting(false)
+        )
+        .overlay(
             RoundedRectangle(cornerRadius: Theme.cardCornerRadius, style: .continuous)
                 .strokeBorder(Color.white.opacity(0.1), lineWidth: 1)
         )
         .shadow(color: .black.opacity(0.35), radius: 16, y: 8)
         .animation(FluidAnimation.gentle, value: fractionalHour)
         .contentShape(Rectangle())
-        .onTapGesture { isShowingContactMenu = true }
-        .confirmationDialog(zone.label, isPresented: $isShowingContactMenu, titleVisibility: .visible) {
-            Button(pinnedContacts.isEmpty ? "Add Contact" : "Manage Contacts") {
-                isPickingContacts = true
-            }
-            Button("Cancel", role: .cancel) {}
-        }
-        .sheet(isPresented: $isPickingContacts) {
-            ContactPickerSheet(zone: zone)
-        }
+        .onTapGesture(perform: onTapCard)
         .task(id: zone.persistentModelID) {
             guard zone.hasKnownCoordinates else { return }
             weather = await WeatherService.fetch(latitude: zone.latitude, longitude: zone.longitude)
