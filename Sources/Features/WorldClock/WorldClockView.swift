@@ -76,6 +76,14 @@ struct WorldClockView: View {
                     }
                 }
 
+                if !trackedZones.isEmpty {
+                    FloatingAddButton {
+                        isAddingZone = true
+                    }
+                    .padding(.trailing, 20)
+                    .padding(.bottom, 96)
+                }
+
                 if let zone = contactMenuZone {
                     FloatingContactMenu(
                         zoneLabel: zone.label,
@@ -93,9 +101,7 @@ struct WorldClockView: View {
             }
             .background(AmbientBackground().ignoresSafeArea())
             .safeAreaInset(edge: .bottom) {
-                BottomTimeScrubber(offsetMinutes: $overlapOffsetMinutes) {
-                    isAddingZone = true
-                }
+                BottomTimeScrubber(offsetMinutes: $overlapOffsetMinutes)
             }
             .toolbar {
                 ToolbarItem(placement: .principal) {
@@ -131,6 +137,31 @@ struct WorldClockView: View {
 /// A glassy circular action button hovering above the scrubber — replaces
 /// the plain nav-bar plus icon with something that matches the floating,
 /// tactile language used everywhere else in the app.
+private struct FloatingAddButton: View {
+    let action: () -> Void
+    @State private var isPressed = false
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "plus")
+                .font(.system(size: 20, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: 54, height: 54)
+                .background(Circle().fill(ModuleAccent.worldClock.gradient))
+                .overlay(Circle().strokeBorder(.white.opacity(0.25), lineWidth: 1))
+                .shadow(color: ModuleAccent.worldClock.color.opacity(0.5), radius: 14, y: 6)
+        }
+        .buttonStyle(.plain)
+        .scaleEffect(isPressed ? 0.9 : 1)
+        .animation(FluidAnimation.snappy, value: isPressed)
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 0)
+                .onChanged { _ in isPressed = true }
+                .onEnded { _ in isPressed = false }
+        )
+    }
+}
+
 /// A custom floating glass menu that appears centered over the screen
 /// with a dimmed backdrop — replaces the plain system action sheet with
 /// something that matches the app's own floating/glass design language.
@@ -201,7 +232,6 @@ private struct FloatingContactMenu: View {
 /// rides up and down the wave as it moves, echoing a real "time flow."
 private struct BottomTimeScrubber: View {
     @Binding var offsetMinutes: Double
-    let onAddCity: () -> Void
     @GestureState private var dragStartOffset: Double?
     @State private var lastHapticStep: Int = 0
     @State private var isPulsing = false
@@ -223,8 +253,8 @@ private struct BottomTimeScrubber: View {
     }
 
     var body: some View {
-        VStack(spacing: 10) {
-            HStack(spacing: 8) {
+        HStack(spacing: 12) {
+            HStack(spacing: 6) {
                 if offsetMinutes == 0 {
                     Circle()
                         .fill(TradingPalette.up)
@@ -237,16 +267,16 @@ private struct BottomTimeScrubber: View {
                             }
                         }
                 }
-                Text(formattedDateTime)
-                    .font(Typography.title(13))
-                    .foregroundStyle(offsetMinutes == 0 ? .white : (isFuture ? TradingPalette.up : TradingPalette.down))
-                    .contentTransition(.numericText())
-                Spacer(minLength: 0)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(formattedDateTime)
+                        .font(Typography.title(13))
+                        .foregroundStyle(offsetMinutes == 0 ? .primary : (isFuture ? TradingPalette.up : TradingPalette.down))
+                        .contentTransition(.numericText())
+                    WaveTrack(offsetMinutes: offsetMinutes)
+                }
             }
 
-            WaveTrack(offsetMinutes: offsetMinutes)
-
-            HStack(spacing: 8) {
+            HStack(spacing: 6) {
                 presetChip("-1d") { offsetMinutes -= 1440 }
                 if offsetMinutes != 0 {
                     presetChip("Now", tint: TradingPalette.up) {
@@ -254,26 +284,19 @@ private struct BottomTimeScrubber: View {
                     }
                 }
                 presetChip("+1d") { offsetMinutes += 1440 }
-
-                Spacer(minLength: 8)
-
-                Button(action: onAddCity) {
-                    Image(systemName: "plus")
-                        .font(.system(size: 15, weight: .bold))
-                        .foregroundStyle(.white)
-                        .frame(width: 34, height: 34)
-                        .background(Circle().fill(.white.opacity(0.18)))
-                }
-                .buttonStyle(.plain)
             }
         }
         .padding(.horizontal, 16)
-        .padding(.top, 12)
-        .padding(.bottom, 14)
+        .padding(.vertical, 12)
         .background(
-            UnevenRoundedRectangle(topLeadingRadius: 24, topTrailingRadius: 24, style: .continuous)
-                .fill(ModuleAccent.worldClock.gradient)
+            UnevenRoundedRectangle(topLeadingRadius: 20, topTrailingRadius: 20, style: .continuous)
+                .fill(.ultraThinMaterial)
         )
+        .overlay(
+            UnevenRoundedRectangle(topLeadingRadius: 20, topTrailingRadius: 20, style: .continuous)
+                .strokeBorder(Theme.cardStroke, lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(0.3), radius: 16, y: -4)
         .contentShape(Rectangle())
         .gesture(
             DragGesture(minimumDistance: 2)
@@ -290,19 +313,18 @@ private struct BottomTimeScrubber: View {
     }
 
     private func presetChip(_ title: String, tint: Color = .white, action: @escaping () -> Void) -> some View {
-        let isAccented = tint != .white
-        return Button {
+        Button {
             withAnimation(FluidAnimation.snappy) { action() }
             #if os(iOS)
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
             #endif
         } label: {
             Text(title)
-                .font(Typography.caption.weight(.semibold))
-                .foregroundStyle(isAccented ? .black : .white)
-                .padding(.horizontal, 10)
-                .padding(.vertical, 6)
-                .background(isAccented ? AnyShapeStyle(tint) : AnyShapeStyle(.white.opacity(0.2)), in: Capsule())
+                .font(Typography.caption)
+                .foregroundStyle(tint == .white ? .secondary : tint)
+                .padding(.horizontal, 9)
+                .padding(.vertical, 5)
+                .background(tint.opacity(tint == .white ? 0.08 : 0.16), in: Capsule())
         }
         .buttonStyle(.plain)
     }
@@ -421,7 +443,11 @@ private struct TimeZoneRow: View {
         return "UTC\(formatted)"
     }
 
-    /// Ties the card's hue to the city's own time of day — hue rotation
+    /// Combines the city with the reshuffle seed so pull-to-refresh gives
+    /// every card a fresh random combination without touching any data.
+    private var accent: Color { CityAccentPalette.accent(for: "\(zone.identifier)#\(colorSeed)") }
+
+    /// Ties the accent's hue to the city's own time of day — hue rotation
     /// only affects saturated colors, so white text/icons pass through
     /// completely untouched while the card's color visibly drifts as the
     /// shared scrubber moves.
@@ -436,13 +462,19 @@ private struct TimeZoneRow: View {
         return Double(components.hour ?? 0) + Double(components.minute ?? 0) / 60
     }
 
-    /// The card's bold fill — a solid, saturated gradient rather than a
-    /// translucent glass tint. Hue-rotation is applied only to this fill
-    /// layer (never to the text/icons above it, since hue-rotation
-    /// doesn't touch grayscale), so the whole card's color can visibly
-    /// drift with the shared timeline scrub without ever hurting legibility.
-    private var boldFill: LinearGradient {
-        CityAccentPalette.gradient(for: "\(zone.identifier)#\(colorSeed)")
+    /// The card's own atmosphere wash — ties each city's background to its
+    /// live local hour, so as the shared scrubber moves, every card
+    /// subtly drifts through its own dawn/day/dusk/night. Kept deliberately
+    /// dim so it reads as a tint, not a competing highlight.
+    private var cardWash: LinearGradient {
+        LinearGradient(
+            colors: [
+                SkyGradientEngine.zenith(atHour: fractionalHour).opacity(0.16),
+                SkyGradientEngine.horizon(atHour: fractionalHour).opacity(0.09)
+            ],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
     }
 
     var body: some View {
@@ -451,22 +483,21 @@ private struct TimeZoneRow: View {
                 VStack(alignment: .leading, spacing: 3) {
                     Text(zone.label)
                         .font(Typography.title(15))
-                        .foregroundStyle(.white)
                     HStack(spacing: 5) {
                         Text(utcOffsetLabel)
                             .font(.system(size: 10, weight: .bold, design: .rounded))
                             .tracking(0.4)
-                            .foregroundStyle(.white)
+                            .foregroundStyle(accent)
                             .padding(.horizontal, 6)
                             .padding(.vertical, 2)
-                            .background(.black.opacity(0.2), in: Capsule())
+                            .background(accent.opacity(0.16), in: Capsule())
                         if let weather {
                             Image(systemName: weather.symbolName)
                                 .font(.system(size: 10))
                                 .symbolRenderingMode(.multicolor)
                             Text("\(Int(weather.temperatureCelsius.rounded()))°")
                                 .font(.system(size: 10, weight: .medium, design: .rounded))
-                                .foregroundStyle(.white.opacity(0.85))
+                                .foregroundStyle(.secondary)
                         }
                     }
                 }
@@ -475,20 +506,19 @@ private struct TimeZoneRow: View {
                     HStack(alignment: .firstTextBaseline, spacing: 2) {
                         Text(timeMain)
                             .font(Typography.numeric(22))
-                            .foregroundStyle(.white)
                             .contentTransition(.numericText())
                         Text(timeSuffix)
                             .font(.system(size: 11, weight: .semibold, design: .rounded))
-                            .foregroundStyle(.white.opacity(0.85))
+                            .foregroundStyle(.secondary)
                     }
                     .animation(FluidAnimation.snappy, value: formattedTime)
                     Text(fullDateLabel)
                         .font(.system(size: 9, weight: .medium, design: .rounded))
-                        .foregroundStyle(.white.opacity(0.75))
+                        .foregroundStyle(.secondary)
                     if pinnedContacts.isEmpty {
                         Label("Tap to pin", systemImage: "person.crop.circle.badge.plus")
                             .font(.system(size: 8, weight: .medium, design: .rounded))
-                            .foregroundStyle(.white.opacity(0.55))
+                            .foregroundStyle(.white.opacity(0.3))
                     }
                 }
             }
@@ -499,14 +529,42 @@ private struct TimeZoneRow: View {
         .padding(.vertical, 12)
         .background(
             RoundedRectangle(cornerRadius: Theme.cardCornerRadius, style: .continuous)
-                .fill(boldFill)
+                .fill(.ultraThinMaterial)
+        )
+        .background(
+            // Hue-rotation only touches this one saturated fill layer —
+            // it never reaches the white text/icons above it, so the
+            // card's color can drift continuously with the timeline
+            // scrub without ever harming legibility.
+            RoundedRectangle(cornerRadius: Theme.cardCornerRadius, style: .continuous)
+                .fill(cardWash)
+                .hueRotation(timeHueShift)
+        )
+        .background(
+            RoundedRectangle(cornerRadius: Theme.cardCornerRadius, style: .continuous)
+                .fill(accent.opacity(0.05))
                 .hueRotation(timeHueShift)
         )
         .overlay(
+            // A thin diagonal glass-shine sweep across the top corner —
+            // the small "premium glass" gimmick that makes a flat card
+            // read as an actual lit surface.
             RoundedRectangle(cornerRadius: Theme.cardCornerRadius, style: .continuous)
-                .strokeBorder(.white.opacity(0.18), lineWidth: 1)
+                .fill(
+                    LinearGradient(
+                        colors: [.white.opacity(0.10), .clear, .clear],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    )
+                )
+                .allowsHitTesting(false)
         )
-        .shadow(color: .black.opacity(0.35), radius: 12, y: 6)
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.cardCornerRadius, style: .continuous)
+                .strokeBorder(accent.opacity(0.4), lineWidth: 1.2)
+        )
+        .shadow(color: accent.opacity(0.22), radius: 18, y: 8)
+        .shadow(color: .black.opacity(0.3), radius: 10, y: 6)
         .animation(FluidAnimation.gentle, value: fractionalHour)
         .contentShape(Rectangle())
         .onTapGesture(perform: onTapCard)
