@@ -91,7 +91,7 @@ struct WorldClockView: View {
                     .transition(.opacity)
                 }
             }
-            .background(Theme.backgroundGradient.ignoresSafeArea())
+            .background(AmbientBackground().ignoresSafeArea())
             .safeAreaInset(edge: .bottom) {
                 BottomTimeScrubber(offsetMinutes: $overlapOffsetMinutes)
             }
@@ -139,15 +139,7 @@ private struct FloatingAddButton: View {
                 .font(.system(size: 20, weight: .semibold))
                 .foregroundStyle(.white)
                 .frame(width: 54, height: 54)
-                .background(
-                    Circle().fill(
-                        LinearGradient(
-                            colors: [ModuleAccent.worldClock.color, ModuleAccent.worldClock.color.opacity(0.7)],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
-                        )
-                    )
-                )
+                .background(Circle().fill(ModuleAccent.worldClock.gradient))
                 .overlay(Circle().strokeBorder(.white.opacity(0.25), lineWidth: 1))
                 .shadow(color: ModuleAccent.worldClock.color.opacity(0.5), radius: 14, y: 6)
         }

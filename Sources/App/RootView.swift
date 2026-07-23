@@ -19,7 +19,7 @@ struct RootView: View {
         .preferredColorScheme(.dark)
         #else
         ZStack(alignment: .top) {
-            Theme.backgroundGradient.ignoresSafeArea()
+            AmbientBackground().ignoresSafeArea()
 
             moduleContent(for: selectedModule)
                 .transition(.asymmetric(
@@ -85,15 +85,9 @@ private struct FloatingModuleSwitcher: View {
                     .background {
                         if isSelected {
                             Capsule()
-                                .fill(
-                                    LinearGradient(
-                                        colors: [module.color, module.color.opacity(0.7)],
-                                        startPoint: .topLeading,
-                                        endPoint: .bottomTrailing
-                                    )
-                                )
+                                .fill(module.gradient)
                                 .matchedGeometryEffect(id: "floating-indicator", in: indicatorNamespace)
-                                .shadow(color: module.color.opacity(0.65), radius: 10, y: 3)
+                                .shadow(color: module.color.opacity(0.7), radius: 12, y: 3)
                         }
                     }
                     .foregroundStyle(isSelected ? .white : .white.opacity(0.55))

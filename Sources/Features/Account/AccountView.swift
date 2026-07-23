@@ -184,7 +184,7 @@ private struct PaywallSheet: View {
                 }
                 .padding()
             }
-            .background(Theme.backgroundGradient.ignoresSafeArea())
+            .background(AmbientBackground().ignoresSafeArea())
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button("Close") { dismiss() }

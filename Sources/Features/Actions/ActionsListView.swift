@@ -36,7 +36,7 @@ struct ActionsListView: View {
 
                 quickAddBar
             }
-            .background(Theme.backgroundGradient.ignoresSafeArea())
+            .background(AmbientBackground().ignoresSafeArea())
             .navigationTitle("Actions")
         }
     }

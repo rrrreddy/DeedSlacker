@@ -133,7 +133,7 @@ struct ContactPickerSheet: View {
                     .searchable(text: $searchText, prompt: "Search contacts")
                 }
             }
-            .background(Theme.backgroundGradient.ignoresSafeArea())
+            .background(AmbientBackground().ignoresSafeArea())
             .navigationTitle("Pin a Contact")
             #if os(iOS)
             .navigationBarTitleDisplayMode(.inline)

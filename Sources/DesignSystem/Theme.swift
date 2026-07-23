@@ -10,11 +10,25 @@ enum ModuleAccent: String, CaseIterable, Identifiable {
 
     var color: Color {
         switch self {
-        case .worldClock: return Color(hex: "#3AA6FF")
-        case .actions: return Color(hex: "#FF6B4A")
-        case .timepage: return Color(hex: "#2FCE8F")
-        case .account: return Color(hex: "#B98CFF")
+        case .worldClock: return Color(hex: "#00C2FF")
+        case .actions: return Color(hex: "#FF5F8F")
+        case .timepage: return Color(hex: "#22E0A8")
+        case .account: return Color(hex: "#B266FF")
         }
+    }
+
+    /// A punchier two-stop gradient version of the tab color, used for
+    /// glows and selection fills so the app reads as vibrant rather than
+    /// flat single-hue accents.
+    var gradient: LinearGradient {
+        let second: Color
+        switch self {
+        case .worldClock: second = Color(hex: "#8C5CFF")
+        case .actions: second = Color(hex: "#FF8C42")
+        case .timepage: second = Color(hex: "#00E5FF")
+        case .account: second = Color(hex: "#FF6EC7")
+        }
+        return LinearGradient(colors: [color, second], startPoint: .topLeading, endPoint: .bottomTrailing)
     }
 
     var displayName: String {

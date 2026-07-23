@@ -41,7 +41,7 @@ struct TimepageView: View {
                     }
                 }
             }
-            .background(Theme.backgroundGradient.ignoresSafeArea())
+            .background(AmbientBackground().ignoresSafeArea())
             .navigationTitle("Timepage")
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
