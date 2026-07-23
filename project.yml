@@ -16,16 +16,22 @@ targetTemplates:
       - path: Sources
     resources:
       - path: Resources
-    entitlements:
-      path: Sources/App/DeedSlacker.entitlements
-      properties:
-        com.apple.security.application-groups:
-          - group.com.deedslacker.shared
-        com.apple.developer.icloud-container-identifiers:
-          - iCloud.com.deedslacker.app
-        com.apple.developer.icloud-services:
-          - CloudKit
-        com.apple.developer.ubiquity-kvstore-identifier: "$(TeamIdentifierPrefix)com.deedslacker.app"
+    # iCloud/CloudKit entitlements are omitted for now — a free "Personal
+    # Team" cannot provision the iCloud capability. Once enrolled in the
+    # paid Apple Developer Program, restore this block (see
+    # Sources/App/DeedSlacker.entitlements, which still has the full
+    # config) and flip CloudSyncContainer.isCloudSyncEnabled to true:
+    #
+    # entitlements:
+    #   path: Sources/App/DeedSlacker.entitlements
+    #   properties:
+    #     com.apple.security.application-groups:
+    #       - group.com.deedslacker.shared
+    #     com.apple.developer.icloud-container-identifiers:
+    #       - iCloud.com.deedslacker.app
+    #     com.apple.developer.icloud-services:
+    #       - CloudKit
+    #     com.apple.developer.ubiquity-kvstore-identifier: "$(TeamIdentifierPrefix)com.deedslacker.app"
     settings:
       base:
         PRODUCT_NAME: DeedSlacker
