@@ -88,20 +88,83 @@ enum TradingPalette {
     static let neutralGradient = LinearGradient(colors: [Color(hex: "#00E676"), Color(hex: "#FF5252")], startPoint: .leading, endPoint: .trailing)
 }
 
-/// Sky colors for the World Clock sun/moon arc, keyed by rough hour of day.
-enum SkyPalette {
-    static let dawn = [Color(hex: "#FF9A76"), Color(hex: "#FFD59E")]
-    static let day = [Color(hex: "#4FC3F7"), Color(hex: "#B3E5FC")]
-    static let dusk = [Color(hex: "#7B5EA7"), Color(hex: "#FF8C69")]
-    static let night = [Color(hex: "#0B1233"), Color(hex: "#1B2A6B")]
+/// Plain RGB triple so sky colors can be linearly interpolated minute by
+/// minute — blending `Color` values directly isn't possible cross-platform
+/// without going through UIColor/NSColor, so this sidesteps that.
+struct RGB {
+    var r: Double
+    var g: Double
+    var b: Double
 
-    static func colors(forHour hour: Double) -> [Color] {
-        switch hour {
-        case 5..<7.5: return dawn
-        case 7.5..<17: return day
-        case 17..<19.5: return dusk
-        default: return night
+    init(hex: String) {
+        let scanner = Scanner(string: hex.trimmingCharacters(in: CharacterSet(charactersIn: "#")))
+        var value: UInt64 = 0
+        scanner.scanHexInt64(&value)
+        r = Double((value & 0xFF0000) >> 16) / 255
+        g = Double((value & 0x00FF00) >> 8) / 255
+        b = Double(value & 0x0000FF) / 255
+    }
+
+    private init(r: Double, g: Double, b: Double) {
+        self.r = r; self.g = g; self.b = b
+    }
+
+    static func lerp(_ a: RGB, _ b: RGB, _ t: Double) -> RGB {
+        RGB(r: a.r + (b.r - a.r) * t, g: a.g + (b.g - a.g) * t, b: a.b + (b.b - a.b) * t)
+    }
+
+    var color: Color { Color(red: r, green: g, blue: b) }
+}
+
+/// A continuously-interpolating sky, keyed by fractional hour of day —
+/// no hard cuts between dawn/day/dusk/night, everything blends smoothly
+/// exactly like watching the real sky change over a day. Each keyframe
+/// carries both a "zenith" (top of the arc) and "horizon" color so the
+/// arc can be filled with a believable two-tone atmosphere.
+enum SkyGradientEngine {
+    private struct Stop {
+        let hour: Double
+        let zenith: RGB
+        let horizon: RGB
+    }
+
+    private static let stops: [Stop] = [
+        Stop(hour: 0, zenith: RGB(hex: "#050818"), horizon: RGB(hex: "#0E1740")),
+        Stop(hour: 4.5, zenith: RGB(hex: "#0B1030"), horizon: RGB(hex: "#2A2A5C")),
+        Stop(hour: 6, zenith: RGB(hex: "#365C91"), horizon: RGB(hex: "#FF9A76")),
+        Stop(hour: 7.5, zenith: RGB(hex: "#4FA6E8"), horizon: RGB(hex: "#FFD59E")),
+        Stop(hour: 12, zenith: RGB(hex: "#2E9BF2"), horizon: RGB(hex: "#BEE7FF")),
+        Stop(hour: 16.5, zenith: RGB(hex: "#3E86D6"), horizon: RGB(hex: "#FFC98B")),
+        Stop(hour: 18, zenith: RGB(hex: "#4A3B77"), horizon: RGB(hex: "#FF7E5F")),
+        Stop(hour: 19.5, zenith: RGB(hex: "#160F35"), horizon: RGB(hex: "#3A2C5E")),
+        Stop(hour: 22, zenith: RGB(hex: "#080B22"), horizon: RGB(hex: "#151B3E")),
+        Stop(hour: 24, zenith: RGB(hex: "#050818"), horizon: RGB(hex: "#0E1740"))
+    ]
+
+    private static func interpolatedPair(atHour hour: Double) -> (zenith: RGB, horizon: RGB) {
+        let wrapped = hour.truncatingRemainder(dividingBy: 24)
+        let clamped = wrapped < 0 ? wrapped + 24 : wrapped
+        for index in 0..<(stops.count - 1) {
+            let current = stops[index]
+            let next = stops[index + 1]
+            if clamped >= current.hour && clamped <= next.hour {
+                let t = (clamped - current.hour) / (next.hour - current.hour)
+                return (RGB.lerp(current.zenith, next.zenith, t), RGB.lerp(current.horizon, next.horizon, t))
+            }
         }
+        return (stops[0].zenith, stops[0].horizon)
+    }
+
+    static func zenith(atHour hour: Double) -> Color { interpolatedPair(atHour: hour).zenith.color }
+    static func horizon(atHour hour: Double) -> Color { interpolatedPair(atHour: hour).horizon.color }
+
+    /// 0 = deep night, 1 = full daylight — drives icon glow intensity and
+    /// star visibility without another switch statement.
+    static func daylight(atHour hour: Double) -> Double {
+        let wrapped = hour.truncatingRemainder(dividingBy: 24)
+        let clamped = wrapped < 0 ? wrapped + 24 : wrapped
+        let distanceFromNoon = abs(clamped - 12)
+        return max(0, 1 - distanceFromNoon / 8)
     }
 }
 
