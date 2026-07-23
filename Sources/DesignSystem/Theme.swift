@@ -46,6 +46,18 @@ enum Theme {
     )
 }
 
+/// A fixed trading-chart palette — green for future ("up"), red for past
+/// ("down") — used by the World Clock time graph and the floating tab bar.
+enum TradingPalette {
+    static let up = Color(hex: "#00E676")
+    static let down = Color(hex: "#FF5252")
+    static let neutral = Color(hex: "#8A93A6")
+
+    static let upGradient = LinearGradient(colors: [Color(hex: "#00E676"), Color(hex: "#00B0FF")], startPoint: .bottom, endPoint: .top)
+    static let downGradient = LinearGradient(colors: [Color(hex: "#FF5252"), Color(hex: "#FF1744")], startPoint: .top, endPoint: .bottom)
+    static let neutralGradient = LinearGradient(colors: [Color(hex: "#00E676"), Color(hex: "#FF5252")], startPoint: .leading, endPoint: .trailing)
+}
+
 extension Color {
     init(hex: String) {
         let scanner = Scanner(string: hex.trimmingCharacters(in: CharacterSet(charactersIn: "#")))
