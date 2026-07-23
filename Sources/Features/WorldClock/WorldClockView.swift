@@ -276,12 +276,14 @@ private struct BottomTimeScrubber: View {
                 }
             }
 
-            if offsetMinutes != 0 {
-                Button("Now") {
-                    withAnimation(FluidAnimation.snappy) { offsetMinutes = 0 }
+            HStack(spacing: 6) {
+                presetChip("-1d") { offsetMinutes -= 1440 }
+                if offsetMinutes != 0 {
+                    presetChip("Now", tint: TradingPalette.up) {
+                        withAnimation(FluidAnimation.snappy) { offsetMinutes = 0 }
+                    }
                 }
-                .font(Typography.caption)
-                .foregroundStyle(TradingPalette.up)
+                presetChip("+1d") { offsetMinutes += 1440 }
             }
         }
         .padding(.horizontal, 16)
@@ -301,6 +303,23 @@ private struct BottomTimeScrubber: View {
                 }
         )
         .animation(FluidAnimation.snappy, value: offsetMinutes == 0)
+    }
+
+    private func presetChip(_ title: String, tint: Color = .white, action: @escaping () -> Void) -> some View {
+        Button {
+            withAnimation(FluidAnimation.snappy) { action() }
+            #if os(iOS)
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            #endif
+        } label: {
+            Text(title)
+                .font(Typography.caption)
+                .foregroundStyle(tint == .white ? .secondary : tint)
+                .padding(.horizontal, 9)
+                .padding(.vertical, 5)
+                .background(tint.opacity(tint == .white ? 0.08 : 0.16), in: Capsule())
+        }
+        .buttonStyle(.plain)
     }
 
     private func fireHapticIfNeeded() {
@@ -353,7 +372,14 @@ private struct BottomTimeScrubber: View {
                             x += step
                         }
                     }
-                    .stroke(.white.opacity(0.18), style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
+                    .stroke(
+                        LinearGradient(
+                            colors: [Color(hex: "#FF6EC7"), Color(hex: "#8C5CFF"), Color(hex: "#3AA6FF"), Color(hex: "#2FCE8F")],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        ).opacity(0.4),
+                        style: StrokeStyle(lineWidth: 1.5, lineCap: .round)
+                    )
 
                     Circle()
                         .fill(isFuture ? TradingPalette.up : TradingPalette.down)
@@ -375,21 +401,41 @@ private struct TimeZoneRow: View {
     @State private var weather: WeatherSnapshot?
     @State private var pinnedContacts: [PickerContact] = []
 
-    private var formattedTime: String {
+    private var timeMain: String {
         let formatter = DateFormatter()
         formatter.timeZone = zone.timeZone
-        formatter.dateFormat = "h:mm a"
+        formatter.dateFormat = "h:mm"
         return formatter.string(from: referenceDate)
     }
 
-    private var dayOffsetLabel: String {
-        let localDay = Calendar.current.component(.day, from: .now)
-        var calendar = Calendar.current
-        calendar.timeZone = zone.timeZone
-        let zoneDay = calendar.component(.day, from: referenceDate)
-        if zoneDay == localDay { return "Today" }
-        return zoneDay > localDay ? "Tomorrow" : "Yesterday"
+    private var timeSuffix: String {
+        let formatter = DateFormatter()
+        formatter.timeZone = zone.timeZone
+        formatter.dateFormat = "a"
+        return formatter.string(from: referenceDate)
     }
+
+    private var formattedTime: String { timeMain + timeSuffix }
+
+    /// A full weekday/date line instead of a bare "Today/Tomorrow" — more
+    /// information for the same space, and matches how dedicated world
+    /// clock apps typically label each row.
+    private var fullDateLabel: String {
+        let formatter = DateFormatter()
+        formatter.timeZone = zone.timeZone
+        formatter.setLocalizedDateFormatFromTemplate("EEE, MMM d")
+        return formatter.string(from: referenceDate).uppercased()
+    }
+
+    private var utcOffsetLabel: String {
+        let hours = Double(zone.timeZone.secondsFromGMT(for: referenceDate)) / 3600
+        let formatted = hours == hours.rounded()
+            ? String(format: "%+.0f", hours)
+            : String(format: "%+.1f", hours)
+        return "UTC\(formatted)"
+    }
+
+    private var accent: Color { CityAccentPalette.accent(for: zone.identifier) }
 
     private var fractionalHour: Double {
         var calendar = Calendar.current
@@ -416,16 +462,18 @@ private struct TimeZoneRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 3) {
+                VStack(alignment: .leading, spacing: 5) {
                     Text(zone.label)
                         .font(Typography.title(17))
                     HStack(spacing: 6) {
-                        Text(dayOffsetLabel.uppercased())
+                        Text(utcOffsetLabel)
                             .font(Typography.eyebrow)
-                            .tracking(0.6)
-                            .foregroundStyle(.secondary)
+                            .tracking(0.4)
+                            .foregroundStyle(accent)
+                            .padding(.horizontal, 7)
+                            .padding(.vertical, 3)
+                            .background(accent.opacity(0.16), in: Capsule())
                         if let weather {
-                            Text("·").foregroundStyle(.secondary)
                             Image(systemName: weather.symbolName)
                                 .font(.system(size: 11))
                                 .symbolRenderingMode(.multicolor)
@@ -437,10 +485,18 @@ private struct TimeZoneRow: View {
                 }
                 Spacer()
                 VStack(alignment: .trailing, spacing: 3) {
-                    Text(formattedTime)
-                        .font(Typography.numeric(28))
-                        .contentTransition(.numericText())
-                        .animation(FluidAnimation.snappy, value: formattedTime)
+                    HStack(alignment: .firstTextBaseline, spacing: 3) {
+                        Text(timeMain)
+                            .font(Typography.numeric(30))
+                            .contentTransition(.numericText())
+                        Text(timeSuffix)
+                            .font(.system(size: 14, weight: .semibold, design: .rounded))
+                            .foregroundStyle(.secondary)
+                    }
+                    .animation(FluidAnimation.snappy, value: formattedTime)
+                    Text(fullDateLabel)
+                        .font(Typography.eyebrow)
+                        .foregroundStyle(.secondary)
                     if pinnedContacts.isEmpty {
                         Label("Tap to pin", systemImage: "person.crop.circle.badge.plus")
                             .font(.system(size: 9, weight: .medium, design: .rounded))
@@ -460,6 +516,10 @@ private struct TimeZoneRow: View {
             RoundedRectangle(cornerRadius: Theme.cardCornerRadius, style: .continuous)
                 .fill(cardWash)
         )
+        .background(
+            RoundedRectangle(cornerRadius: Theme.cardCornerRadius, style: .continuous)
+                .fill(accent.opacity(0.05))
+        )
         .overlay(
             // A thin diagonal glass-shine sweep across the top corner —
             // the small "premium glass" gimmick that makes a flat card
@@ -476,9 +536,10 @@ private struct TimeZoneRow: View {
         )
         .overlay(
             RoundedRectangle(cornerRadius: Theme.cardCornerRadius, style: .continuous)
-                .strokeBorder(Color.white.opacity(0.1), lineWidth: 1)
+                .strokeBorder(accent.opacity(0.4), lineWidth: 1.2)
         )
-        .shadow(color: .black.opacity(0.35), radius: 16, y: 8)
+        .shadow(color: accent.opacity(0.22), radius: 18, y: 8)
+        .shadow(color: .black.opacity(0.3), radius: 10, y: 6)
         .animation(FluidAnimation.gentle, value: fractionalHour)
         .contentShape(Rectangle())
         .onTapGesture(perform: onTapCard)

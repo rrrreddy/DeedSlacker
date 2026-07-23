@@ -88,6 +88,35 @@ enum TradingPalette {
     static let neutralGradient = LinearGradient(colors: [Color(hex: "#00E676"), Color(hex: "#FF5252")], startPoint: .leading, endPoint: .trailing)
 }
 
+/// A curated set of vibrant, high-saturation gradient pairs — each city
+/// deterministically gets one (hashed from its identifier) so the World
+/// Clock list reads as colorful and alive rather than a wall of identical
+/// gray cards, without needing a manual color picker.
+enum CityAccentPalette {
+    private static let gradients: [[Color]] = [
+        [Color(hex: "#FF6EC7"), Color(hex: "#8C5CFF")],
+        [Color(hex: "#00E5FF"), Color(hex: "#3AA6FF")],
+        [Color(hex: "#FFB86B"), Color(hex: "#FF5F6D")],
+        [Color(hex: "#7BE33F"), Color(hex: "#2FCE8F")],
+        [Color(hex: "#C77DFF"), Color(hex: "#5A9CFF")],
+        [Color(hex: "#FFD166"), Color(hex: "#FF8C42")],
+        [Color(hex: "#4DE1C7"), Color(hex: "#3A7BFF")],
+        [Color(hex: "#FF7DB0"), Color(hex: "#FF9A56")]
+    ]
+
+    private static func index(for identifier: String) -> Int {
+        abs(identifier.hashValue) % gradients.count
+    }
+
+    static func accent(for identifier: String) -> Color {
+        gradients[index(for: identifier)][0]
+    }
+
+    static func gradient(for identifier: String) -> LinearGradient {
+        LinearGradient(colors: gradients[index(for: identifier)], startPoint: .topLeading, endPoint: .bottomTrailing)
+    }
+}
+
 /// Plain RGB triple so sky colors can be linearly interpolated minute by
 /// minute — blending `Color` values directly isn't possible cross-platform
 /// without going through UIColor/NSColor, so this sidesteps that.
