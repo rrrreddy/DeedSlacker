@@ -9,7 +9,7 @@ enum FluidAnimation {
 
 extension View {
     /// Applies a subtle press-down scale + opacity feedback, matching the
-    /// tactile feel of Moleskine Studio apps (Timepage/Actions/Flow).
+    /// tactile feel of Moleskine Studio apps (Timepage/Actions).
     func fluidPressEffect(isPressed: Bool) -> some View {
         self
             .scaleEffect(isPressed ? 0.96 : 1)

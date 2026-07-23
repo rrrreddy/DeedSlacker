@@ -17,7 +17,6 @@ enum CloudSyncContainer {
         let schema = Schema([
             TrackedTimeZone.self,
             ActionItem.self,
-            FlowAutomation.self,
             CalendarEvent.self
         ])
 

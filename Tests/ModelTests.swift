@@ -7,7 +7,6 @@ final class ModelTests: XCTestCase {
         let schema = Schema([
             TrackedTimeZone.self,
             ActionItem.self,
-            FlowAutomation.self,
             CalendarEvent.self
         ])
         let configuration = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
@@ -21,15 +20,6 @@ final class ModelTests: XCTestCase {
         context.insert(item)
         XCTAssertFalse(item.isCompleted)
         XCTAssertNil(item.completedAt)
-    }
-
-    func testFlowAutomationRoundTripsEnumRawValues() throws {
-        let container = try makeInMemoryContainer()
-        let context = ModelContext(container)
-        let automation = FlowAutomation(name: "Evening wind down", trigger: .timeOfDay, action: .sendNotification)
-        context.insert(automation)
-        XCTAssertEqual(automation.trigger, .timeOfDay)
-        XCTAssertEqual(automation.action, .sendNotification)
     }
 
     func testTrackedTimeZoneResolvesIdentifier() throws {

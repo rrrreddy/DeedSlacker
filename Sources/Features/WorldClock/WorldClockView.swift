@@ -213,47 +213,43 @@ private struct TimeZoneRow: View {
         return zoneDay > localDay ? "Tomorrow" : "Yesterday"
     }
 
-    /// Rough day/night shading for the zone's current hour — a visual cue,
-    /// not astronomically precise sunrise/sunset.
-    private var dayNightGradient: LinearGradient {
+    /// Fractional hour of day (0..<24) in the zone's local time, feeding
+    /// the sun/moon arc's continuous position.
+    private var fractionalHour: Double {
         var calendar = Calendar.current
         calendar.timeZone = zone.timeZone
-        let hour = calendar.component(.hour, from: referenceDate)
-        let isDaytime = (7...18).contains(hour)
-        return isDaytime
-            ? LinearGradient(colors: [Color(hex: "#FFD166"), Color(hex: "#FF8C42")], startPoint: .leading, endPoint: .trailing)
-            : LinearGradient(colors: [Color(hex: "#1B2A4A"), Color(hex: "#3A0CA3")], startPoint: .leading, endPoint: .trailing)
+        let components = calendar.dateComponents([.hour, .minute], from: referenceDate)
+        return Double(components.hour ?? 0) + Double(components.minute ?? 0) / 60
     }
 
     var body: some View {
         Button(action: onTap) {
-            FluidCard(accent: isComparing ? TradingPalette.up : Color.secondary.opacity(0.3)) {
-                VStack(alignment: .leading, spacing: 10) {
-                    HStack {
-                        VStack(alignment: .leading, spacing: 4) {
+            FluidCard(accent: isComparing ? TradingPalette.up : Color.white.opacity(0.06)) {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(alignment: .top) {
+                        VStack(alignment: .leading, spacing: 3) {
                             HStack(spacing: 6) {
                                 Text(zone.label)
-                                    .font(.headline)
+                                    .font(Typography.title(17))
                                 if isComparing {
                                     Image(systemName: "checkmark.circle.fill")
                                         .foregroundStyle(TradingPalette.up)
                                         .font(.caption)
                                 }
                             }
-                            Text(dayOffsetLabel)
-                                .font(.caption)
+                            Text(dayOffsetLabel.uppercased())
+                                .font(Typography.eyebrow)
+                                .tracking(0.6)
                                 .foregroundStyle(.secondary)
                         }
                         Spacer()
                         Text(formattedTime)
-                            .font(.system(size: 26, weight: .semibold, design: .rounded))
+                            .font(Typography.numeric(28))
                             .contentTransition(.numericText())
                             .animation(FluidAnimation.snappy, value: formattedTime)
                     }
 
-                    Capsule()
-                        .fill(dayNightGradient)
-                        .frame(height: 6)
+                    SunMoonArcView(hour: fractionalHour)
                 }
             }
         }

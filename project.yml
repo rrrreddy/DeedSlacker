@@ -32,6 +32,9 @@ targetTemplates:
     #     com.apple.developer.icloud-services:
     #       - CloudKit
     #     com.apple.developer.ubiquity-kvstore-identifier: "$(TeamIdentifierPrefix)com.deedslacker.app"
+    dependencies:
+      - sdk: StoreKit.framework
+      - sdk: CloudKit.framework
     settings:
       base:
         PRODUCT_NAME: DeedSlacker

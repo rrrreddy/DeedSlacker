@@ -18,7 +18,7 @@ struct RootView: View {
         }
         .preferredColorScheme(.dark)
         #else
-        ZStack(alignment: .bottom) {
+        ZStack(alignment: .top) {
             Theme.backgroundGradient.ignoresSafeArea()
 
             moduleContent(for: selectedModule)
@@ -27,12 +27,12 @@ struct RootView: View {
                     removal: .opacity
                 ))
                 .animation(FluidAnimation.gentle, value: selectedModule)
-                .safeAreaInset(edge: .bottom) {
-                    Color.clear.frame(height: 74)
+                .safeAreaInset(edge: .top) {
+                    Color.clear.frame(height: 68)
                 }
 
             FloatingModuleSwitcher(selectedModule: $selectedModule)
-                .padding(.bottom, 12)
+                .padding(.top, 8)
         }
         .preferredColorScheme(.dark)
         #endif
@@ -45,16 +45,17 @@ struct RootView: View {
             WorldClockView()
         case .actions:
             ActionsListView()
-        case .flow:
-            FlowListView()
         case .timepage:
             TimepageView()
+        case .account:
+            AccountView()
         }
     }
 }
 
-/// A floating, glass, Dynamic-Island-style tab bar that hovers above the
-/// content instead of docking flush with the screen edge.
+/// A floating, glass, Dynamic-Island-style tab bar hovering at the top of
+/// the screen — icons only until selected, when the label slides in
+/// alongside a soft gradient glow behind it.
 private struct FloatingModuleSwitcher: View {
     @Binding var selectedModule: ModuleAccent
     @Namespace private var indicatorNamespace
@@ -68,41 +69,48 @@ private struct FloatingModuleSwitcher: View {
                         selectedModule = module
                     }
                 } label: {
-                    VStack(spacing: 3) {
+                    HStack(spacing: 6) {
                         Image(systemName: module.symbolName)
-                            .font(.system(size: 18, weight: .semibold))
-                            .symbolVariant(isSelected ? .fill : .none)
+                            .font(.system(size: 16, weight: .semibold))
                         if isSelected {
                             Text(module.displayName)
-                                .font(.system(size: 10, weight: .semibold))
+                                .font(.system(size: 12, weight: .semibold, design: .rounded))
                                 .lineLimit(1)
                                 .fixedSize()
                                 .transition(.opacity.combined(with: .scale(scale: 0.7)))
                         }
                     }
-                    .padding(.horizontal, isSelected ? 16 : 12)
-                    .padding(.vertical, 12)
+                    .padding(.horizontal, isSelected ? 15 : 11)
+                    .padding(.vertical, 10)
                     .background {
                         if isSelected {
                             Capsule()
-                                .fill(module.color.opacity(0.9))
+                                .fill(
+                                    LinearGradient(
+                                        colors: [module.color, module.color.opacity(0.7)],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    )
+                                )
                                 .matchedGeometryEffect(id: "floating-indicator", in: indicatorNamespace)
-                                .shadow(color: module.color.opacity(0.6), radius: 10, y: 3)
+                                .shadow(color: module.color.opacity(0.65), radius: 10, y: 3)
                         }
                     }
-                    .foregroundStyle(isSelected ? .white : .secondary)
+                    .foregroundStyle(isSelected ? .white : .white.opacity(0.55))
                 }
                 .buttonStyle(.plain)
             }
         }
-        .padding(6)
+        .padding(5)
         .background(
             Capsule()
                 .fill(.ultraThinMaterial)
-                .overlay(Capsule().strokeBorder(.white.opacity(0.12), lineWidth: 1))
+                .overlay(
+                    Capsule().strokeBorder(Theme.cardStroke, lineWidth: 1)
+                )
         )
-        .shadow(color: .black.opacity(0.35), radius: 20, y: 10)
-        .padding(.horizontal, 20)
+        .shadow(color: .black.opacity(0.4), radius: 24, y: 10)
+        .padding(.horizontal, 16)
         .animation(FluidAnimation.snappy, value: selectedModule)
     }
 }
