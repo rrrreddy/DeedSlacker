@@ -10,47 +10,20 @@ struct WorldClockView: View {
 
     @State private var overlapOffsetMinutes: Double = 0
     @State private var isAddingZone = false
-    @State private var compareSelection: [PersistentIdentifier] = []
 
     private var referenceDate: Date {
         Calendar.current.date(byAdding: .minute, value: Int(overlapOffsetMinutes), to: .now) ?? .now
-    }
-
-    private var comparedZones: [TrackedTimeZone] {
-        trackedZones.filter { compareSelection.contains($0.persistentModelID) }
     }
 
     var body: some View {
         NavigationStack {
             List {
                 Section {
-                    CompareChipsBar(zones: comparedZones) { zone in
-                        toggleCompare(zone)
-                    }
-                    .listRowInsets(EdgeInsets())
-                    .listRowSeparator(.hidden)
-                    .listRowBackground(Color.clear)
-
-                    if comparedZones.count == 2 {
-                        ComparisonBanner(zones: comparedZones, referenceDate: referenceDate)
-                            .listRowInsets(EdgeInsets())
+                    ForEach(trackedZones) { zone in
+                        TimeZoneRow(zone: zone, referenceDate: referenceDate)
+                            .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
                             .listRowSeparator(.hidden)
                             .listRowBackground(Color.clear)
-                    }
-                }
-
-                Section {
-                    ForEach(trackedZones) { zone in
-                        TimeZoneRow(
-                            zone: zone,
-                            referenceDate: referenceDate,
-                            isComparing: compareSelection.contains(zone.persistentModelID)
-                        ) {
-                            toggleCompare(zone)
-                        }
-                        .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
-                        .listRowSeparator(.hidden)
-                        .listRowBackground(Color.clear)
                     }
                     .onMove(perform: moveZones)
                 } header: {
@@ -93,21 +66,6 @@ struct WorldClockView: View {
                 AddTimeZoneSheet(sortOrder: trackedZones.count)
             }
         }
-        .animation(FluidAnimation.gentle, value: compareSelection)
-    }
-
-    private func toggleCompare(_ zone: TrackedTimeZone) {
-        let id = zone.persistentModelID
-        withAnimation(FluidAnimation.bouncy) {
-            if let index = compareSelection.firstIndex(of: id) {
-                compareSelection.remove(at: index)
-            } else {
-                if compareSelection.count == 2 {
-                    compareSelection.removeFirst()
-                }
-                compareSelection.append(id)
-            }
-        }
     }
 
     private func moveZones(from source: IndexSet, to destination: Int) {
@@ -119,11 +77,12 @@ struct WorldClockView: View {
     }
 }
 
-/// A slim, single-line time scrubber fixed to the bottom of the screen via
+/// A slim time scrubber fixed to the bottom of the screen via
 /// `safeAreaInset` — always visible, no scrolling required. Dragging is
 /// relative (delta-based) rather than mapped to a fixed track range, so it
-/// scrubs an unlimited number of days forward or back rather than being
-/// capped at +/-24h. Shows the full date and time, not just an offset.
+/// scrubs an unlimited number of days forward or back. The track itself is
+/// a flowing sine curve rather than a flat line — the playhead visibly
+/// rides up and down the wave as it moves, echoing a real "time flow."
 private struct BottomTimeScrubber: View {
     @Binding var offsetMinutes: Double
     @GestureState private var dragStartOffset: Double?
@@ -147,17 +106,13 @@ private struct BottomTimeScrubber: View {
 
     var body: some View {
         HStack(spacing: 12) {
-            Image(systemName: "clock.arrow.2.circlepath")
-                .foregroundStyle(offsetMinutes == 0 ? .secondary : (isFuture ? TradingPalette.up : TradingPalette.down))
-
-            VStack(alignment: .leading, spacing: 1) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text(formattedDateTime)
                     .font(Typography.title(13))
+                    .foregroundStyle(offsetMinutes == 0 ? .primary : (isFuture ? TradingPalette.up : TradingPalette.down))
                     .contentTransition(.numericText())
-                Track(offsetMinutes: offsetMinutes)
+                WaveTrack(offsetMinutes: offsetMinutes)
             }
-
-            Spacer(minLength: 8)
 
             if offsetMinutes != 0 {
                 Button("Now") {
@@ -168,7 +123,7 @@ private struct BottomTimeScrubber: View {
             }
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 10)
+        .padding(.vertical, 8)
         .background(.ultraThinMaterial)
         .overlay(Rectangle().frame(height: 1).foregroundStyle(.white.opacity(0.08)), alignment: .top)
         .contentShape(Rectangle())
@@ -196,9 +151,10 @@ private struct BottomTimeScrubber: View {
         #endif
     }
 
-    /// A hairline progress indicator showing how far from "now" the
-    /// scrubbed time is, without claiming a fixed absolute range.
-    private struct Track: View {
+    /// A gently flowing sine-wave line, with the playhead riding exactly
+    /// on the curve — it moves left/right with the scrub and visibly bobs
+    /// up/down along the wave rather than sliding a flat track.
+    private struct WaveTrack: View {
         let offsetMinutes: Double
 
         private var isFuture: Bool { offsetMinutes >= 0 }
@@ -209,82 +165,53 @@ private struct BottomTimeScrubber: View {
             return hours / (hours + 24)
         }
 
+        private let cycles: Double = 2.5
+        private let amplitude: CGFloat = 9
+
+        private func waveY(atX x: CGFloat, width: CGFloat, midY: CGFloat) -> CGFloat {
+            midY - amplitude * CGFloat(sin(2 * .pi * cycles * (x / width) + offsetMinutes / 90))
+        }
+
         var body: some View {
             GeometryReader { geo in
                 let width = geo.size.width
+                let midY = geo.size.height / 2
                 let midX = width / 2
                 let travel = fillFraction * midX
                 let dotX = isFuture ? midX + travel : midX - travel
+                let dotY = waveY(atX: dotX, width: width, midY: midY)
 
-                ZStack(alignment: .leading) {
-                    Capsule().fill(.white.opacity(0.08)).frame(height: 3)
-                    Capsule()
-                        .fill(isFuture ? TradingPalette.up : TradingPalette.down)
-                        .frame(width: abs(dotX - midX), height: 3)
-                        .offset(x: min(dotX, midX))
+                ZStack {
+                    Path { path in
+                        let step: CGFloat = 2
+                        path.move(to: CGPoint(x: 0, y: waveY(atX: 0, width: width, midY: midY)))
+                        var x: CGFloat = step
+                        while x <= width {
+                            path.addLine(to: CGPoint(x: x, y: waveY(atX: x, width: width, midY: midY)))
+                            x += step
+                        }
+                    }
+                    .stroke(.white.opacity(0.18), style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
+
                     Circle()
                         .fill(isFuture ? TradingPalette.up : TradingPalette.down)
-                        .frame(width: 8, height: 8)
-                        .position(x: dotX, y: 1.5)
+                        .frame(width: 9, height: 9)
+                        .shadow(color: (isFuture ? TradingPalette.up : TradingPalette.down).opacity(0.7), radius: 5)
+                        .position(x: dotX, y: dotY)
                 }
             }
-            .frame(height: 6)
+            .frame(height: 22)
         }
-    }
-}
-
-/// A horizontal row of removable chips showing which cities are currently
-/// selected for comparison — clearer and more interactive than a plain
-/// checkmark buried in each row.
-private struct CompareChipsBar: View {
-    let zones: [TrackedTimeZone]
-    let onRemove: (TrackedTimeZone) -> Void
-
-    var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "arrow.left.arrow.right.circle.fill")
-                .foregroundStyle(TradingPalette.up)
-            if zones.isEmpty {
-                Text("Tap up to two cities below to compare them")
-                    .font(Typography.caption)
-                    .foregroundStyle(.secondary)
-            } else {
-                ForEach(zones) { zone in
-                    Button {
-                        onRemove(zone)
-                    } label: {
-                        HStack(spacing: 4) {
-                            Text(zone.label)
-                                .font(Typography.caption)
-                            Image(systemName: "xmark.circle.fill")
-                                .font(.system(size: 11))
-                        }
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
-                        .background(TradingPalette.up.opacity(0.18), in: Capsule())
-                        .overlay(Capsule().strokeBorder(TradingPalette.up.opacity(0.4), lineWidth: 1))
-                    }
-                    .buttonStyle(.plain)
-                }
-                if zones.count < 2 {
-                    Text("Pick one more")
-                        .font(Typography.caption)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            Spacer()
-        }
-        .padding(.horizontal, 4)
     }
 }
 
 private struct TimeZoneRow: View {
     let zone: TrackedTimeZone
     let referenceDate: Date
-    let isComparing: Bool
-    let onTap: () -> Void
 
     @State private var weather: WeatherSnapshot?
+    @State private var pinnedContacts: [PickerContact] = []
+    @State private var isShowingContactMenu = false
     @State private var isPickingContacts = false
 
     private var formattedTime: String {
@@ -329,15 +256,8 @@ private struct TimeZoneRow: View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .top) {
                 VStack(alignment: .leading, spacing: 3) {
-                    HStack(spacing: 6) {
-                        Text(zone.label)
-                            .font(Typography.title(17))
-                        if isComparing {
-                            Image(systemName: "checkmark.circle.fill")
-                                .foregroundStyle(TradingPalette.up)
-                                .font(.caption)
-                        }
-                    }
+                    Text(zone.label)
+                        .font(Typography.title(17))
                     HStack(spacing: 6) {
                         Text(dayOffsetLabel.uppercased())
                             .font(Typography.eyebrow)
@@ -361,11 +281,7 @@ private struct TimeZoneRow: View {
                     .animation(FluidAnimation.snappy, value: formattedTime)
             }
 
-            SunMoonArcView(hour: fractionalHour)
-
-            PinnedContactsCluster(zone: zone) {
-                isPickingContacts = true
-            }
+            SunMoonArcView(hour: fractionalHour, pinnedContacts: pinnedContacts)
         }
         .padding(Theme.cardPadding)
         .background(
@@ -378,12 +294,18 @@ private struct TimeZoneRow: View {
         )
         .overlay(
             RoundedRectangle(cornerRadius: Theme.cardCornerRadius, style: .continuous)
-                .strokeBorder(isComparing ? TradingPalette.up : Color.white.opacity(0.1), lineWidth: isComparing ? 2 : 1)
+                .strokeBorder(Color.white.opacity(0.1), lineWidth: 1)
         )
         .shadow(color: .black.opacity(0.35), radius: 16, y: 8)
         .animation(FluidAnimation.gentle, value: fractionalHour)
         .contentShape(Rectangle())
-        .onTapGesture(perform: onTap)
+        .onTapGesture { isShowingContactMenu = true }
+        .confirmationDialog(zone.label, isPresented: $isShowingContactMenu, titleVisibility: .visible) {
+            Button(pinnedContacts.isEmpty ? "Add Contact" : "Manage Contacts") {
+                isPickingContacts = true
+            }
+            Button("Cancel", role: .cancel) {}
+        }
         .sheet(isPresented: $isPickingContacts) {
             ContactPickerSheet(zone: zone)
         }
@@ -391,30 +313,14 @@ private struct TimeZoneRow: View {
             guard zone.hasKnownCoordinates else { return }
             weather = await WeatherService.fetch(latitude: zone.latitude, longitude: zone.longitude)
         }
-    }
-}
-
-private struct ComparisonBanner: View {
-    let zones: [TrackedTimeZone]
-    let referenceDate: Date
-
-    private var hourDifference: Int {
-        let offsetA = zones[0].timeZone.secondsFromGMT(for: referenceDate)
-        let offsetB = zones[1].timeZone.secondsFromGMT(for: referenceDate)
-        return (offsetA - offsetB) / 3600
-    }
-
-    var body: some View {
-        FluidCard(accent: hourDifference == 0 ? TradingPalette.neutral : (hourDifference > 0 ? TradingPalette.up : TradingPalette.down)) {
-            VStack(alignment: .leading, spacing: 6) {
-                Label("Comparing \(zones[0].label) & \(zones[1].label)", systemImage: "arrow.left.arrow.right")
-                    .font(Typography.title(15))
-                Text(hourDifference == 0
-                     ? "Same local time right now."
-                     : "\(zones[0].label) is \(abs(hourDifference))h \(hourDifference > 0 ? "ahead of" : "behind") \(zones[1].label).")
-                    .font(Typography.body)
-                    .foregroundStyle(.secondary)
+        .task(id: zone.pinnedContactIdentifiers) {
+            var loaded: [PickerContact] = []
+            for identifier in zone.pinnedContactIdentifiers {
+                if let contact = await ContactsService.contact(forIdentifier: identifier) {
+                    loaded.append(contact)
+                }
             }
+            pinnedContacts = loaded
         }
     }
 }

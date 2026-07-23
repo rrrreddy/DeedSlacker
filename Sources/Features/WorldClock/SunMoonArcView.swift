@@ -9,6 +9,9 @@ import SwiftUI
 struct SunMoonArcView: View {
     /// Fractional hour of day in the target time zone, 0..<24.
     let hour: Double
+    /// Contacts pinned to this city — rendered riding right alongside the
+    /// sun/moon on the arc, rather than in a separate row below the card.
+    var pinnedContacts: [PickerContact] = []
 
     private let arcHeight: CGFloat = 52
 
@@ -95,6 +98,19 @@ struct SunMoonArcView: View {
                 }
                 .font(.system(size: 17))
                 .position(x: x, y: y)
+
+                // Pinned contacts ride the arc right alongside the sun/moon,
+                // stacked just above it so they visibly travel together.
+                if !pinnedContacts.isEmpty {
+                    HStack(spacing: -6) {
+                        ForEach(pinnedContacts.prefix(3)) { contact in
+                            ContactThumbnailImage(data: contact.thumbnailData, size: 18)
+                                .overlay(Circle().strokeBorder(.white.opacity(0.8), lineWidth: 1))
+                                .shadow(color: .black.opacity(0.4), radius: 2)
+                        }
+                    }
+                    .position(x: x, y: max(11, y - 20))
+                }
             }
             .animation(FluidAnimation.gentle, value: hour)
         }

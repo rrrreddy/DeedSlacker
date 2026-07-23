@@ -170,7 +170,7 @@ private struct ContactAvatarButton: View {
     }
 }
 
-private struct ContactThumbnailImage: View {
+struct ContactThumbnailImage: View {
     let data: Data?
     let size: CGFloat
 
@@ -201,52 +201,3 @@ import UIKit
 #else
 import AppKit
 #endif
-
-/// The overlapping-avatars cluster shown on a city card, plus the count
-/// label and "Pin Local Contact" entry point.
-struct PinnedContactsCluster: View {
-    let zone: TrackedTimeZone
-    let onManage: () -> Void
-
-    @State private var contacts: [PickerContact] = []
-
-    var body: some View {
-        Button(action: onManage) {
-            HStack(spacing: 8) {
-                if contacts.isEmpty {
-                    Image(systemName: "person.crop.circle.badge.plus")
-                        .font(.system(size: 13))
-                    Text("Pin a contact")
-                        .font(Typography.caption)
-                } else {
-                    HStack(spacing: -10) {
-                        ForEach(contacts.prefix(4)) { contact in
-                            ContactThumbnailImage(data: contact.thumbnailData, size: 26)
-                                .overlay(Circle().strokeBorder(.black.opacity(0.4), lineWidth: 1.5))
-                        }
-                    }
-                    Text("\(contacts.count)")
-                        .font(Typography.caption)
-                        .foregroundStyle(.secondary)
-                }
-                Spacer()
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.white.opacity(0.3))
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 7)
-            .background(.white.opacity(0.06), in: Capsule())
-        }
-        .buttonStyle(.plain)
-        .task(id: zone.pinnedContactIdentifiers) {
-            var loaded: [PickerContact] = []
-            for identifier in zone.pinnedContactIdentifiers {
-                if let contact = await ContactsService.contact(forIdentifier: identifier) {
-                    loaded.append(contact)
-                }
-            }
-            contacts = loaded
-        }
-    }
-}
