@@ -243,6 +243,16 @@ private struct TradingTimeGraph: View {
                     .foregroundStyle(TradingPalette.up)
             }
             .font(Typography.caption)
+
+            // Day-boundary labels so the 48h range reads as Yesterday/
+            // Today/Tomorrow rather than raw hour offsets.
+            HStack {
+                Text("YESTERDAY").frame(maxWidth: .infinity, alignment: .leading)
+                Text("TODAY").frame(maxWidth: .infinity, alignment: .center)
+                Text("TOMORROW").frame(maxWidth: .infinity, alignment: .trailing)
+            }
+            .font(Typography.eyebrow)
+            .foregroundStyle(.white.opacity(0.35))
         }
         .padding(.horizontal, 4)
     }
@@ -314,6 +324,7 @@ private struct TimeZoneRow: View {
     let onTap: () -> Void
 
     @State private var weather: WeatherSnapshot?
+    @State private var isPickingContacts = false
 
     private var formattedTime: String {
         let formatter = DateFormatter()
@@ -338,53 +349,87 @@ private struct TimeZoneRow: View {
         return Double(components.hour ?? 0) + Double(components.minute ?? 0) / 60
     }
 
-    var body: some View {
-        FluidCard(accent: isComparing ? TradingPalette.up : Color.white.opacity(0.06)) {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(alignment: .top) {
-                    Image(systemName: "line.3.horizontal")
-                        .font(.system(size: 13))
-                        .foregroundStyle(.white.opacity(0.25))
-                        .padding(.top, 3)
+    /// The card's own atmosphere wash — ties each city's background to its
+    /// live local hour, so as the shared scrubber moves, every card visibly
+    /// drifts through its own dawn/day/dusk/night rather than staying flat.
+    private var cardWash: LinearGradient {
+        LinearGradient(
+            colors: [
+                SkyGradientEngine.zenith(atHour: fractionalHour).opacity(0.5),
+                SkyGradientEngine.horizon(atHour: fractionalHour).opacity(0.28)
+            ],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+    }
 
-                    VStack(alignment: .leading, spacing: 3) {
-                        HStack(spacing: 6) {
-                            Text(zone.label)
-                                .font(Typography.title(17))
-                            if isComparing {
-                                Image(systemName: "checkmark.circle.fill")
-                                    .foregroundStyle(TradingPalette.up)
-                                    .font(.caption)
-                            }
-                        }
-                        HStack(spacing: 6) {
-                            Text(dayOffsetLabel.uppercased())
-                                .font(Typography.eyebrow)
-                                .tracking(0.6)
-                                .foregroundStyle(.secondary)
-                            if let weather {
-                                Text("·").foregroundStyle(.secondary)
-                                Image(systemName: weather.symbolName)
-                                    .font(.system(size: 11))
-                                    .symbolRenderingMode(.multicolor)
-                                Text("\(Int(weather.temperatureCelsius.rounded()))°")
-                                    .font(Typography.eyebrow)
-                                    .foregroundStyle(.secondary)
-                            }
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .top) {
+                Image(systemName: "line.3.horizontal")
+                    .font(.system(size: 13))
+                    .foregroundStyle(.white.opacity(0.25))
+                    .padding(.top, 3)
+
+                VStack(alignment: .leading, spacing: 3) {
+                    HStack(spacing: 6) {
+                        Text(zone.label)
+                            .font(Typography.title(17))
+                        if isComparing {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundStyle(TradingPalette.up)
+                                .font(.caption)
                         }
                     }
-                    Spacer()
-                    Text(formattedTime)
-                        .font(Typography.numeric(28))
-                        .contentTransition(.numericText())
-                        .animation(FluidAnimation.snappy, value: formattedTime)
+                    HStack(spacing: 6) {
+                        Text(dayOffsetLabel.uppercased())
+                            .font(Typography.eyebrow)
+                            .tracking(0.6)
+                            .foregroundStyle(.secondary)
+                        if let weather {
+                            Text("·").foregroundStyle(.secondary)
+                            Image(systemName: weather.symbolName)
+                                .font(.system(size: 11))
+                                .symbolRenderingMode(.multicolor)
+                            Text("\(Int(weather.temperatureCelsius.rounded()))°")
+                                .font(Typography.eyebrow)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
                 }
+                Spacer()
+                Text(formattedTime)
+                    .font(Typography.numeric(28))
+                    .contentTransition(.numericText())
+                    .animation(FluidAnimation.snappy, value: formattedTime)
+            }
 
-                SunMoonArcView(hour: fractionalHour)
+            SunMoonArcView(hour: fractionalHour)
+
+            PinnedContactsCluster(zone: zone) {
+                isPickingContacts = true
             }
         }
+        .padding(Theme.cardPadding)
+        .background(
+            RoundedRectangle(cornerRadius: Theme.cardCornerRadius, style: .continuous)
+                .fill(.ultraThinMaterial)
+        )
+        .background(
+            RoundedRectangle(cornerRadius: Theme.cardCornerRadius, style: .continuous)
+                .fill(cardWash)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: Theme.cardCornerRadius, style: .continuous)
+                .strokeBorder(isComparing ? TradingPalette.up : Color.white.opacity(0.1), lineWidth: isComparing ? 2 : 1)
+        )
+        .shadow(color: .black.opacity(0.35), radius: 16, y: 8)
+        .animation(FluidAnimation.gentle, value: fractionalHour)
         .contentShape(Rectangle())
         .onTapGesture(perform: onTap)
+        .sheet(isPresented: $isPickingContacts) {
+            ContactPickerSheet(zone: zone)
+        }
         .task(id: zone.persistentModelID) {
             guard zone.hasKnownCoordinates else { return }
             weather = await WeatherService.fetch(latitude: zone.latitude, longitude: zone.longitude)

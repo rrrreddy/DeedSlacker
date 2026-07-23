@@ -12,6 +12,10 @@ final class TrackedTimeZone {
     var latitude: Double = 0
     var longitude: Double = 0
     var hasKnownCoordinates: Bool = false
+    /// CNContact identifiers manually pinned to this city — local-only
+    /// association, not location sharing. The device's Contacts store
+    /// remains the source of truth for the name/photo.
+    var pinnedContactIdentifiers: [String] = []
 
     init(identifier: String, label: String, sortOrder: Int = 0, latitude: Double? = nil, longitude: Double? = nil) {
         self.identifier = identifier
