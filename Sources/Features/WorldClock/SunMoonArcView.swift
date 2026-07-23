@@ -13,7 +13,7 @@ struct SunMoonArcView: View {
     /// sun/moon on the arc, rather than in a separate row below the card.
     var pinnedContacts: [PickerContact] = []
 
-    private let arcHeight: CGFloat = 52
+    private let arcHeight: CGFloat = 44
 
     private var isDaytime: Bool { hour >= 6 && hour < 18 }
     private var daylight: Double { SkyGradientEngine.daylight(atHour: hour) }
@@ -100,16 +100,28 @@ struct SunMoonArcView: View {
                 .position(x: x, y: y)
 
                 // Pinned contacts ride the arc right alongside the sun/moon,
-                // stacked just above it so they visibly travel together.
-                if !pinnedContacts.isEmpty {
-                    HStack(spacing: -6) {
-                        ForEach(pinnedContacts.prefix(3)) { contact in
-                            ContactThumbnailImage(data: contact.thumbnailData, initials: contact.initials, size: 18)
-                                .overlay(Circle().strokeBorder(.white.opacity(0.8), lineWidth: 1))
-                                .shadow(color: .black.opacity(0.4), radius: 2)
+                // stacked just above it so they visibly travel together —
+                // the first contact's name rides along too, not just an
+                // anonymous avatar.
+                if let first = pinnedContacts.first {
+                    HStack(spacing: 4) {
+                        HStack(spacing: -6) {
+                            ForEach(pinnedContacts.prefix(3)) { contact in
+                                ContactThumbnailImage(data: contact.thumbnailData, size: 18)
+                                    .overlay(Circle().strokeBorder(.white.opacity(0.8), lineWidth: 1))
+                                    .shadow(color: .black.opacity(0.4), radius: 2)
+                            }
                         }
+                        Text(pinnedContacts.count > 1 ? "\(first.name.components(separatedBy: " ").first ?? first.name) +\(pinnedContacts.count - 1)" : first.name)
+                            .font(.system(size: 9, weight: .semibold, design: .rounded))
+                            .foregroundStyle(.white)
+                            .lineLimit(1)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(.black.opacity(0.35), in: Capsule())
                     }
-                    .position(x: x, y: max(11, y - 20))
+                    .fixedSize()
+                    .position(x: min(max(x, geo.size.width * 0.22), geo.size.width * 0.78), y: max(11, y - 20))
                 }
             }
             .animation(FluidAnimation.gentle, value: hour)

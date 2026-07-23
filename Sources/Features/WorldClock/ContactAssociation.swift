@@ -8,15 +8,6 @@ struct PickerContact: Identifiable, Equatable {
     let id: String
     let name: String
     let thumbnailData: Data?
-
-    /// Up to two uppercase letters (first name + last name) used when
-    /// there's no photo — every contact is pinnable, not just ones with
-    /// a picture.
-    var initials: String {
-        let parts = name.split(separator: " ").prefix(2)
-        let letters = parts.compactMap { $0.first }.map(String.init)
-        return letters.isEmpty ? "?" : letters.joined().uppercased()
-    }
 }
 
 /// Thin wrapper over the Contacts framework. Deliberately local-only —
@@ -172,7 +163,7 @@ private struct ContactAvatarButton: View {
         Button(action: action) {
             VStack(spacing: 6) {
                 ZStack(alignment: .bottomTrailing) {
-                    ContactThumbnailImage(data: contact.thumbnailData, initials: contact.initials, size: 64)
+                    ContactThumbnailImage(data: contact.thumbnailData, size: 64)
                         .overlay(Circle().strokeBorder(isSelected ? TradingPalette.up : .clear, lineWidth: 3))
 
                     if isSelected {
@@ -193,35 +184,26 @@ private struct ContactAvatarButton: View {
     }
 }
 
-/// A contact avatar that falls back to a colored initials badge when
-/// there's no photo, so every contact — not just ones with a picture —
-/// is fully usable across the picker and the arc.
+/// A contact avatar that falls back to the standard default-contact
+/// silhouette when there's no photo, so every contact — not just ones
+/// with a picture — is fully usable across the picker and the arc.
 struct ContactThumbnailImage: View {
     let data: Data?
-    let initials: String
     let size: CGFloat
-
-    private var initialsBackground: LinearGradient {
-        let seed = initials.unicodeScalars.reduce(0) { $0 + Int($1.value) }
-        let palettes: [[Color]] = [
-            [Color(hex: "#8C5CFF"), Color(hex: "#3AA6FF")],
-            [Color(hex: "#FF6B4A"), Color(hex: "#FFB86B")],
-            [Color(hex: "#2FCE8F"), Color(hex: "#3AA6FF")],
-            [Color(hex: "#FF5F9E"), Color(hex: "#8C5CFF")]
-        ]
-        return LinearGradient(colors: palettes[seed % palettes.count], startPoint: .topLeading, endPoint: .bottomTrailing)
-    }
 
     var body: some View {
         Group {
             if let data, let image = platformImage(from: data) {
                 image.resizable().aspectRatio(contentMode: .fill)
             } else {
+                // The classic default-contact silhouette — same neutral
+                // placeholder the Contacts app itself uses for anyone
+                // without a photo, rather than a colored initials badge.
                 ZStack {
-                    Circle().fill(initialsBackground)
-                    Text(initials)
-                        .font(.system(size: size * 0.36, weight: .bold, design: .rounded))
-                        .foregroundStyle(.white)
+                    Circle().fill(Color(hex: "#8A93A6").opacity(0.35))
+                    Image(systemName: "person.fill")
+                        .font(.system(size: size * 0.5))
+                        .foregroundStyle(Color(hex: "#8A93A6"))
                 }
             }
         }

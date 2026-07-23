@@ -12,6 +12,9 @@ struct WorldClockView: View {
     @State private var isAddingZone = false
     @State private var contactMenuZone: TrackedTimeZone?
     @State private var pickingContactsZone: TrackedTimeZone?
+    /// Reshuffled on pull-to-refresh so each city gets a fresh random
+    /// vibrant color combination — purely cosmetic, doesn't touch data.
+    @State private var colorSeed: Int = 0
 
     private var referenceDate: Date {
         Calendar.current.date(byAdding: .minute, value: Int(overlapOffsetMinutes), to: .now) ?? .now
@@ -23,7 +26,7 @@ struct WorldClockView: View {
                 List {
     Section {
                         ForEach(trackedZones) { zone in
-                            TimeZoneRow(zone: zone, referenceDate: referenceDate) {
+                            TimeZoneRow(zone: zone, referenceDate: referenceDate, colorSeed: colorSeed) {
                                 withAnimation(FluidAnimation.bouncy) { contactMenuZone = zone }
                             }
                             .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
@@ -67,6 +70,11 @@ struct WorldClockView: View {
                 }
                 .listStyle(.plain)
                 .scrollContentBackground(.hidden)
+                .refreshable {
+                    withAnimation(FluidAnimation.bouncy) {
+                        colorSeed = Int.random(in: 0..<100_000)
+                    }
+                }
 
                 if !trackedZones.isEmpty {
                     FloatingAddButton {
@@ -279,9 +287,16 @@ private struct BottomTimeScrubber: View {
             }
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 8)
-        .background(.ultraThinMaterial)
-        .overlay(Rectangle().frame(height: 1).foregroundStyle(.white.opacity(0.08)), alignment: .top)
+        .padding(.vertical, 12)
+        .background(
+            UnevenRoundedRectangle(topLeadingRadius: 20, topTrailingRadius: 20, style: .continuous)
+                .fill(.ultraThinMaterial)
+        )
+        .overlay(
+            UnevenRoundedRectangle(topLeadingRadius: 20, topTrailingRadius: 20, style: .continuous)
+                .strokeBorder(Theme.cardStroke, lineWidth: 1)
+        )
+        .shadow(color: .black.opacity(0.3), radius: 16, y: -4)
         .contentShape(Rectangle())
         .gesture(
             DragGesture(minimumDistance: 2)
@@ -388,6 +403,7 @@ private struct BottomTimeScrubber: View {
 private struct TimeZoneRow: View {
     let zone: TrackedTimeZone
     let referenceDate: Date
+    let colorSeed: Int
     let onTapCard: () -> Void
 
     @State private var weather: WeatherSnapshot?
@@ -427,7 +443,17 @@ private struct TimeZoneRow: View {
         return "UTC\(formatted)"
     }
 
-    private var accent: Color { CityAccentPalette.accent(for: zone.identifier) }
+    /// Combines the city with the reshuffle seed so pull-to-refresh gives
+    /// every card a fresh random combination without touching any data.
+    private var accent: Color { CityAccentPalette.accent(for: "\(zone.identifier)#\(colorSeed)") }
+
+    /// Ties the accent's hue to the city's own time of day — hue rotation
+    /// only affects saturated colors, so white text/icons pass through
+    /// completely untouched while the card's color visibly drifts as the
+    /// shared scrubber moves.
+    private var timeHueShift: Angle {
+        .degrees((fractionalHour / 24) * 50 - 25)
+    }
 
     private var fractionalHour: Double {
         var calendar = Calendar.current
@@ -452,46 +478,46 @@ private struct TimeZoneRow: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .top) {
-                VStack(alignment: .leading, spacing: 5) {
+                VStack(alignment: .leading, spacing: 3) {
                     Text(zone.label)
-                        .font(Typography.title(17))
-                    HStack(spacing: 6) {
+                        .font(Typography.title(15))
+                    HStack(spacing: 5) {
                         Text(utcOffsetLabel)
-                            .font(Typography.eyebrow)
+                            .font(.system(size: 10, weight: .bold, design: .rounded))
                             .tracking(0.4)
                             .foregroundStyle(accent)
-                            .padding(.horizontal, 7)
-                            .padding(.vertical, 3)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
                             .background(accent.opacity(0.16), in: Capsule())
                         if let weather {
                             Image(systemName: weather.symbolName)
-                                .font(.system(size: 11))
+                                .font(.system(size: 10))
                                 .symbolRenderingMode(.multicolor)
                             Text("\(Int(weather.temperatureCelsius.rounded()))°")
-                                .font(Typography.eyebrow)
+                                .font(.system(size: 10, weight: .medium, design: .rounded))
                                 .foregroundStyle(.secondary)
                         }
                     }
                 }
                 Spacer()
-                VStack(alignment: .trailing, spacing: 3) {
-                    HStack(alignment: .firstTextBaseline, spacing: 3) {
+                VStack(alignment: .trailing, spacing: 2) {
+                    HStack(alignment: .firstTextBaseline, spacing: 2) {
                         Text(timeMain)
-                            .font(Typography.numeric(30))
+                            .font(Typography.numeric(22))
                             .contentTransition(.numericText())
                         Text(timeSuffix)
-                            .font(.system(size: 14, weight: .semibold, design: .rounded))
+                            .font(.system(size: 11, weight: .semibold, design: .rounded))
                             .foregroundStyle(.secondary)
                     }
                     .animation(FluidAnimation.snappy, value: formattedTime)
                     Text(fullDateLabel)
-                        .font(Typography.eyebrow)
+                        .font(.system(size: 9, weight: .medium, design: .rounded))
                         .foregroundStyle(.secondary)
                     if pinnedContacts.isEmpty {
                         Label("Tap to pin", systemImage: "person.crop.circle.badge.plus")
-                            .font(.system(size: 9, weight: .medium, design: .rounded))
+                            .font(.system(size: 8, weight: .medium, design: .rounded))
                             .foregroundStyle(.white.opacity(0.3))
                     }
                 }
@@ -499,18 +525,25 @@ private struct TimeZoneRow: View {
 
             SunMoonArcView(hour: fractionalHour, pinnedContacts: pinnedContacts)
         }
-        .padding(Theme.cardPadding)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
         .background(
             RoundedRectangle(cornerRadius: Theme.cardCornerRadius, style: .continuous)
                 .fill(.ultraThinMaterial)
         )
         .background(
+            // Hue-rotation only touches this one saturated fill layer —
+            // it never reaches the white text/icons above it, so the
+            // card's color can drift continuously with the timeline
+            // scrub without ever harming legibility.
             RoundedRectangle(cornerRadius: Theme.cardCornerRadius, style: .continuous)
                 .fill(cardWash)
+                .hueRotation(timeHueShift)
         )
         .background(
             RoundedRectangle(cornerRadius: Theme.cardCornerRadius, style: .continuous)
                 .fill(accent.opacity(0.05))
+                .hueRotation(timeHueShift)
         )
         .overlay(
             // A thin diagonal glass-shine sweep across the top corner —
