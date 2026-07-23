@@ -8,12 +8,12 @@ struct WorldClockView: View {
     @Environment(\.modelContext) private var modelContext
     @Query(sort: \TrackedTimeZone.sortOrder) private var trackedZones: [TrackedTimeZone]
 
-    @State private var overlapOffsetHours: Double = 0
+    @State private var overlapOffsetMinutes: Double = 0
     @State private var isAddingZone = false
     @State private var compareSelection: [PersistentIdentifier] = []
 
     private var referenceDate: Date {
-        Calendar.current.date(byAdding: .minute, value: Int(overlapOffsetHours * 60), to: .now) ?? .now
+        Calendar.current.date(byAdding: .minute, value: Int(overlapOffsetMinutes), to: .now) ?? .now
     }
 
     private var comparedZones: [TrackedTimeZone] {
@@ -72,19 +72,13 @@ struct WorldClockView: View {
                     .listRowBackground(Color.clear)
                     .padding(.top, 40)
                 }
-
-                // The scrubber lives at the bottom, thumb-reachable, still
-                // with no card/box behind it.
-                Section {
-                    TradingTimeGraph(offsetHours: $overlapOffsetHours)
-                        .listRowInsets(EdgeInsets())
-                        .listRowSeparator(.hidden)
-                        .listRowBackground(Color.clear)
-                }
             }
             .listStyle(.plain)
             .scrollContentBackground(.hidden)
             .background(Theme.backgroundGradient.ignoresSafeArea())
+            .safeAreaInset(edge: .bottom) {
+                BottomTimeScrubber(offsetMinutes: $overlapOffsetMinutes)
+            }
             .navigationTitle("World Clock")
             .toolbar {
                 ToolbarItem(placement: .primaryAction) {
@@ -125,150 +119,117 @@ struct WorldClockView: View {
     }
 }
 
-/// A playful, tactile time scrubber styled like a trading chart: dragging
-/// scales the whole graph up slightly, a floating time bubble follows the
-/// playhead, and a light haptic ticks every time you cross an hour line.
-private struct TradingTimeGraph: View {
-    @Binding var offsetHours: Double
-    @GestureState private var isDragging = false
-    @State private var lastHapticHour: Int = 0
+/// A slim, single-line time scrubber fixed to the bottom of the screen via
+/// `safeAreaInset` — always visible, no scrolling required. Dragging is
+/// relative (delta-based) rather than mapped to a fixed track range, so it
+/// scrubs an unlimited number of days forward or back rather than being
+/// capped at +/-24h. Shows the full date and time, not just an offset.
+private struct BottomTimeScrubber: View {
+    @Binding var offsetMinutes: Double
+    @GestureState private var dragStartOffset: Double?
+    @State private var lastHapticStep: Int = 0
 
-    private let range: ClosedRange<Double> = -24...24
-    private let graphHeight: CGFloat = 130
+    /// Minutes of scrub per point of horizontal drag — tuned so a full
+    /// screen-width swipe covers roughly a day.
+    private let sensitivity: Double = 4
 
-    private var isFuture: Bool { offsetHours >= 0 }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text(offsetHours == 0 ? "Right now" : String(format: "%+.1fh from now", offsetHours))
-                    .font(Typography.title(15))
-                    .foregroundStyle(offsetHours == 0 ? .secondary : (isFuture ? TradingPalette.up : TradingPalette.down))
-                if offsetHours != 0 {
-                    Button("Reset") {
-                        withAnimation(FluidAnimation.snappy) { offsetHours = 0 }
-                    }
-                    .font(Typography.caption)
-                    .foregroundStyle(.secondary)
-                }
-                Spacer()
-            }
-
-            GeometryReader { geo in
-                let width = geo.size.width
-                let midY = graphHeight / 2
-                let progress = (offsetHours - range.lowerBound) / (range.upperBound - range.lowerBound)
-                let playheadX = progress * width
-                let zeroX = ((0 - range.lowerBound) / (range.upperBound - range.lowerBound)) * width
-                let amplitude = min(abs(offsetHours) / 24, 1) * (midY - 18)
-                let playheadY = midY - (isFuture ? amplitude : -amplitude)
-
-                ZStack {
-                    // Faint hour gridlines only — no card/box behind them,
-                    // the graph sits directly on the page background.
-                    HStack(spacing: 0) {
-                        ForEach(Array(stride(from: range.lowerBound, through: range.upperBound, by: 6)), id: \.self) { hour in
-                            Rectangle()
-                                .fill(.white.opacity(hour == 0 ? 0.16 : 0.05))
-                                .frame(width: hour == 0 ? 1.5 : 1)
-                            if hour < range.upperBound { Spacer(minLength: 0) }
-                        }
-                    }
-                    .padding(.vertical, 14)
-
-                    Path { path in
-                        path.move(to: CGPoint(x: 0, y: midY))
-                        path.addLine(to: CGPoint(x: width, y: midY))
-                    }
-                    .stroke(Color.white.opacity(0.16), style: StrokeStyle(lineWidth: 1, dash: [4, 4]))
-
-                    Path { path in
-                        path.move(to: CGPoint(x: playheadX, y: midY))
-                        path.addLine(to: CGPoint(x: playheadX, y: playheadY))
-                    }
-                    .stroke(isFuture ? TradingPalette.up : TradingPalette.down, lineWidth: 3)
-
-                    Path { path in
-                        path.move(to: CGPoint(x: zeroX, y: midY))
-                        path.addLine(to: CGPoint(x: playheadX, y: playheadY))
-                        path.addLine(to: CGPoint(x: playheadX, y: midY))
-                        path.closeSubpath()
-                    }
-                    .fill((isFuture ? TradingPalette.upGradient : TradingPalette.downGradient).opacity(0.35))
-
-                    // Floating time bubble that follows the playhead while dragging.
-                    if isDragging {
-                        Text(bubbleText)
-                            .font(Typography.caption)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 5)
-                            .background(.ultraThinMaterial, in: Capsule())
-                            .overlay(Capsule().strokeBorder(.white.opacity(0.2), lineWidth: 1))
-                            .position(x: playheadX, y: max(20, playheadY - 26))
-                            .transition(.opacity.combined(with: .scale(scale: 0.8)))
-                    }
-
-                    Circle()
-                        .fill(isFuture ? TradingPalette.up : TradingPalette.down)
-                        .frame(width: isDragging ? 22 : 17, height: isDragging ? 22 : 17)
-                        .shadow(color: (isFuture ? TradingPalette.up : TradingPalette.down).opacity(0.85), radius: isDragging ? 12 : 7)
-                        .overlay(Circle().strokeBorder(.white.opacity(0.75), lineWidth: 1.5))
-                        .position(x: playheadX, y: playheadY)
-                        .animation(FluidAnimation.snappy, value: isDragging)
-                }
-                .scaleEffect(isDragging ? 1.015 : 1)
-                .animation(FluidAnimation.snappy, value: isDragging)
-                .contentShape(Rectangle())
-                .gesture(
-                    DragGesture(minimumDistance: 0)
-                        .updating($isDragging) { _, state, _ in state = true }
-                        .onChanged { value in
-                            let clampedX = min(max(0, value.location.x), width)
-                            let newProgress = clampedX / width
-                            offsetHours = range.lowerBound + newProgress * (range.upperBound - range.lowerBound)
-                            fireHapticIfNeeded()
-                        }
-                )
-            }
-            .frame(height: graphHeight)
-
-            HStack {
-                Label("-24h", systemImage: "arrow.down.right")
-                    .foregroundStyle(TradingPalette.down)
-                Spacer()
-                Text("now")
-                    .foregroundStyle(.secondary)
-                Spacer()
-                Label("+24h", systemImage: "arrow.up.right")
-                    .foregroundStyle(TradingPalette.up)
-            }
-            .font(Typography.caption)
-
-            // Day-boundary labels so the 48h range reads as Yesterday/
-            // Today/Tomorrow rather than raw hour offsets.
-            HStack {
-                Text("YESTERDAY").frame(maxWidth: .infinity, alignment: .leading)
-                Text("TODAY").frame(maxWidth: .infinity, alignment: .center)
-                Text("TOMORROW").frame(maxWidth: .infinity, alignment: .trailing)
-            }
-            .font(Typography.eyebrow)
-            .foregroundStyle(.white.opacity(0.35))
-        }
-        .padding(.horizontal, 4)
+    private var referenceDate: Date {
+        Calendar.current.date(byAdding: .minute, value: Int(offsetMinutes), to: .now) ?? .now
     }
 
-    private var bubbleText: String {
-        offsetHours == 0 ? "now" : String(format: "%+.1fh", offsetHours)
+    private var isFuture: Bool { offsetMinutes >= 0 }
+
+    private var formattedDateTime: String {
+        let formatter = DateFormatter()
+        formatter.setLocalizedDateFormatFromTemplate("EEE, MMM d · h:mm a")
+        return formatter.string(from: referenceDate)
+    }
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "clock.arrow.2.circlepath")
+                .foregroundStyle(offsetMinutes == 0 ? .secondary : (isFuture ? TradingPalette.up : TradingPalette.down))
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(formattedDateTime)
+                    .font(Typography.title(13))
+                    .contentTransition(.numericText())
+                Track(offsetMinutes: offsetMinutes)
+            }
+
+            Spacer(minLength: 8)
+
+            if offsetMinutes != 0 {
+                Button("Now") {
+                    withAnimation(FluidAnimation.snappy) { offsetMinutes = 0 }
+                }
+                .font(Typography.caption)
+                .foregroundStyle(TradingPalette.up)
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(.ultraThinMaterial)
+        .overlay(Rectangle().frame(height: 1).foregroundStyle(.white.opacity(0.08)), alignment: .top)
+        .contentShape(Rectangle())
+        .gesture(
+            DragGesture(minimumDistance: 2)
+                .updating($dragStartOffset) { _, state, _ in
+                    if state == nil { state = offsetMinutes }
+                }
+                .onChanged { value in
+                    let base = dragStartOffset ?? offsetMinutes
+                    offsetMinutes = base + value.translation.width * sensitivity
+                    fireHapticIfNeeded()
+                }
+        )
+        .animation(FluidAnimation.snappy, value: offsetMinutes == 0)
     }
 
     private func fireHapticIfNeeded() {
         #if os(iOS)
-        let rounded = Int(offsetHours.rounded())
-        if rounded != lastHapticHour {
-            lastHapticHour = rounded
+        let step = Int((offsetMinutes / 60).rounded())
+        if step != lastHapticStep {
+            lastHapticStep = step
             UIImpactFeedbackGenerator(style: .light).impactOccurred()
         }
         #endif
+    }
+
+    /// A hairline progress indicator showing how far from "now" the
+    /// scrubbed time is, without claiming a fixed absolute range.
+    private struct Track: View {
+        let offsetMinutes: Double
+
+        private var isFuture: Bool { offsetMinutes >= 0 }
+        /// Compresses toward 1 for large offsets so the dot never pins to
+        /// an edge — there's no hard limit to represent.
+        private var fillFraction: Double {
+            let hours = abs(offsetMinutes) / 60
+            return hours / (hours + 24)
+        }
+
+        var body: some View {
+            GeometryReader { geo in
+                let width = geo.size.width
+                let midX = width / 2
+                let travel = fillFraction * midX
+                let dotX = isFuture ? midX + travel : midX - travel
+
+                ZStack(alignment: .leading) {
+                    Capsule().fill(.white.opacity(0.08)).frame(height: 3)
+                    Capsule()
+                        .fill(isFuture ? TradingPalette.up : TradingPalette.down)
+                        .frame(width: abs(dotX - midX), height: 3)
+                        .offset(x: min(dotX, midX))
+                    Circle()
+                        .fill(isFuture ? TradingPalette.up : TradingPalette.down)
+                        .frame(width: 8, height: 8)
+                        .position(x: dotX, y: 1.5)
+                }
+            }
+            .frame(height: 6)
+        }
     }
 }
 
@@ -350,13 +311,14 @@ private struct TimeZoneRow: View {
     }
 
     /// The card's own atmosphere wash — ties each city's background to its
-    /// live local hour, so as the shared scrubber moves, every card visibly
-    /// drifts through its own dawn/day/dusk/night rather than staying flat.
+    /// live local hour, so as the shared scrubber moves, every card
+    /// subtly drifts through its own dawn/day/dusk/night. Kept deliberately
+    /// dim so it reads as a tint, not a competing highlight.
     private var cardWash: LinearGradient {
         LinearGradient(
             colors: [
-                SkyGradientEngine.zenith(atHour: fractionalHour).opacity(0.5),
-                SkyGradientEngine.horizon(atHour: fractionalHour).opacity(0.28)
+                SkyGradientEngine.zenith(atHour: fractionalHour).opacity(0.16),
+                SkyGradientEngine.horizon(atHour: fractionalHour).opacity(0.09)
             ],
             startPoint: .topLeading,
             endPoint: .bottomTrailing
@@ -364,13 +326,8 @@ private struct TimeZoneRow: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .top) {
-                Image(systemName: "line.3.horizontal")
-                    .font(.system(size: 13))
-                    .foregroundStyle(.white.opacity(0.25))
-                    .padding(.top, 3)
-
                 VStack(alignment: .leading, spacing: 3) {
                     HStack(spacing: 6) {
                         Text(zone.label)

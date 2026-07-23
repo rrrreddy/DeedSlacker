@@ -23,31 +23,37 @@ enum ContactsService {
     }
 
     /// Contacts with a photo only, per the "photo-contacts filter" spec —
-    /// an unlabeled avatar picker isn't useful for this feature.
-    static func fetchPhotoContacts() -> [PickerContact] {
-        let keys: [CNKeyDescriptor] = [
-            CNContactGivenNameKey as CNKeyDescriptor,
-            CNContactFamilyNameKey as CNKeyDescriptor,
-            CNContactThumbnailImageDataKey as CNKeyDescriptor
-        ]
-        let request = CNContactFetchRequest(keysToFetch: keys)
-        var results: [PickerContact] = []
-        try? CNContactStore().enumerateContacts(with: request) { contact, _ in
-            guard let thumbnail = contact.thumbnailImageData else { return }
-            results.append(PickerContact(id: contact.identifier, name: contact.givenName, thumbnailData: thumbnail))
-        }
-        return results.sorted { $0.name < $1.name }
+    /// an unlabeled avatar picker isn't useful for this feature. Runs off
+    /// the main actor: `CNContactStore` enumeration is a blocking, synchronous
+    /// call and must never happen directly inside a SwiftUI `.task`.
+    static func fetchPhotoContacts() async -> [PickerContact] {
+        await Task.detached(priority: .userInitiated) {
+            let keys: [CNKeyDescriptor] = [
+                CNContactGivenNameKey as CNKeyDescriptor,
+                CNContactFamilyNameKey as CNKeyDescriptor,
+                CNContactThumbnailImageDataKey as CNKeyDescriptor
+            ]
+            let request = CNContactFetchRequest(keysToFetch: keys)
+            var results: [PickerContact] = []
+            try? CNContactStore().enumerateContacts(with: request) { contact, _ in
+                guard let thumbnail = contact.thumbnailImageData else { return }
+                results.append(PickerContact(id: contact.identifier, name: contact.givenName, thumbnailData: thumbnail))
+            }
+            return results.sorted { $0.name < $1.name }
+        }.value
     }
 
-    static func contact(forIdentifier identifier: String) -> PickerContact? {
-        let keys: [CNKeyDescriptor] = [
-            CNContactGivenNameKey as CNKeyDescriptor,
-            CNContactThumbnailImageDataKey as CNKeyDescriptor
-        ]
-        guard let contact = try? CNContactStore().unifiedContact(withIdentifier: identifier, keysToFetch: keys) else {
-            return nil
-        }
-        return PickerContact(id: contact.identifier, name: contact.givenName, thumbnailData: contact.thumbnailImageData)
+    static func contact(forIdentifier identifier: String) async -> PickerContact? {
+        await Task.detached(priority: .utility) {
+            let keys: [CNKeyDescriptor] = [
+                CNContactGivenNameKey as CNKeyDescriptor,
+                CNContactThumbnailImageDataKey as CNKeyDescriptor
+            ]
+            guard let contact = try? CNContactStore().unifiedContact(withIdentifier: identifier, keysToFetch: keys) else {
+                return nil
+            }
+            return PickerContact(id: contact.identifier, name: contact.givenName, thumbnailData: contact.thumbnailImageData)
+        }.value
     }
 }
 
@@ -61,6 +67,7 @@ struct ContactPickerSheet: View {
     @State private var contacts: [PickerContact] = []
     @State private var selectedIDs: Set<String> = []
     @State private var accessDenied = false
+    @State private var isLoading = true
 
     private let columns = [GridItem(.adaptive(minimum: 84), spacing: 16)]
 
@@ -73,8 +80,14 @@ struct ContactPickerSheet: View {
                         title: "Contacts access needed",
                         subtitle: "Enable Contacts access in Settings to pin people to this city."
                     )
+                } else if isLoading {
+                    ProgressView("Loading contacts…").padding()
                 } else if contacts.isEmpty {
-                    ProgressView().padding()
+                    EmptyModuleState(
+                        symbolName: "person.crop.circle.badge.questionmark",
+                        title: "No photo contacts found",
+                        subtitle: "Add a photo to a contact in the Contacts app first — only contacts with a photo show up here."
+                    )
                 } else {
                     ScrollView {
                         LazyVGrid(columns: columns, spacing: 20) {
@@ -117,9 +130,11 @@ struct ContactPickerSheet: View {
                 selectedIDs = Set(zone.pinnedContactIdentifiers)
                 guard await ContactsService.requestAccess() else {
                     accessDenied = true
+                    isLoading = false
                     return
                 }
-                contacts = ContactsService.fetchPhotoContacts()
+                contacts = await ContactsService.fetchPhotoContacts()
+                isLoading = false
             }
         }
     }
@@ -196,31 +211,42 @@ struct PinnedContactsCluster: View {
     @State private var contacts: [PickerContact] = []
 
     var body: some View {
-        HStack(spacing: 10) {
-            if !contacts.isEmpty {
-                HStack(spacing: -12) {
-                    ForEach(contacts.prefix(4)) { contact in
-                        ContactThumbnailImage(data: contact.thumbnailData, size: 34)
-                            .overlay(Circle().strokeBorder(.black.opacity(0.4), lineWidth: 2))
+        Button(action: onManage) {
+            HStack(spacing: 8) {
+                if contacts.isEmpty {
+                    Image(systemName: "person.crop.circle.badge.plus")
+                        .font(.system(size: 13))
+                    Text("Pin a contact")
+                        .font(Typography.caption)
+                } else {
+                    HStack(spacing: -10) {
+                        ForEach(contacts.prefix(4)) { contact in
+                            ContactThumbnailImage(data: contact.thumbnailData, size: 26)
+                                .overlay(Circle().strokeBorder(.black.opacity(0.4), lineWidth: 1.5))
+                        }
                     }
+                    Text("\(contacts.count)")
+                        .font(Typography.caption)
+                        .foregroundStyle(.secondary)
                 }
-                Text("\(contacts.count) contact\(contacts.count == 1 ? "" : "s")")
-                    .font(Typography.caption)
-                    .foregroundStyle(.secondary)
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.white.opacity(0.3))
             }
-
-            Spacer()
-
-            Button(action: onManage) {
-                Label(contacts.isEmpty ? "Pin Local Contact" : "Manage", systemImage: contacts.isEmpty ? "person.crop.circle.badge.plus" : "gearshape.fill")
-                    .font(Typography.caption)
-            }
-            .buttonStyle(.borderedProminent)
-            .tint(.white.opacity(0.14))
-            .foregroundStyle(.white)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .background(.white.opacity(0.06), in: Capsule())
         }
+        .buttonStyle(.plain)
         .task(id: zone.pinnedContactIdentifiers) {
-            contacts = zone.pinnedContactIdentifiers.compactMap(ContactsService.contact(forIdentifier:))
+            var loaded: [PickerContact] = []
+            for identifier in zone.pinnedContactIdentifiers {
+                if let contact = await ContactsService.contact(forIdentifier: identifier) {
+                    loaded.append(contact)
+                }
+            }
+            contacts = loaded
         }
     }
 }
